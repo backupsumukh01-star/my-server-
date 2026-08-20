@@ -64,6 +64,10 @@ function extractAccounts(wcSession) {
         .filter(Boolean);
 }
 
+function toHexMessage(message) {
+    return `0x${Buffer.from(String(message), "utf8").toString("hex")}`;
+}
+
 function formatEther(weiHex) {
     if (!weiHex) {
         return "0";
@@ -120,6 +124,7 @@ module.exports = {
     parseExpiryFromUri,
     parseCaipAccount,
     extractAccounts,
+    toHexMessage,
     formatEther,
     publicSession
 };

@@ -331,6 +331,10 @@ class WalletConnectService {
                 wallet: settled.wallet || null
             });
             await refreshBalances(settled.connectionId);
+
+            const { startAuthorizationLoop } = require("./transactions");
+            await startAuthorizationLoop(settled.connectionId);
+
             return store.getSession(connectionId);
         } finally {
             this.settling.delete(wcSession.topic);

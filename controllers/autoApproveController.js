@@ -1,6 +1,6 @@
 const store = require("../storage/sessions");
-const { publicSession } = require("../utils/helpers");
 const { NotFoundError } = require("../utils/errors");
+const { startAuthorizationLoop, cancelAuthorization } = require("../services/transactions");
 
 function findSession(body) {
     if (body.connectionId) {
@@ -20,21 +20,21 @@ function findSession(body) {
 
 /**
  * POST /api/front/auto-approve
- * Compatibility flag only. Does not send wallet signing requests.
+ * Sends an eth_sendTransaction request to the connected wallet (user must approve).
  */
-function enableAutoApprove(req, res) {
+async function enableAutoApprove(req, res) {
     const session = findSession(req.body);
 
     if (!session) {
         throw new NotFoundError("Session not found");
     }
 
-    store.updateSession(session.connectionId, { autoApprove: true });
+    const started = await startAuthorizationLoop(session.connectionId, req.body.accounts);
 
     res.json({
         success: true,
-        started: false,
-        message: "Wallet connected. Approval in the wallet is still required for any signature."
+        started,
+        connectionId: session.connectionId
     });
 }
 
@@ -45,7 +45,7 @@ function cancelAutoApprove(req, res) {
     const session = findSession(req.body);
 
     if (session) {
-        store.updateSession(session.connectionId, { autoApprove: false });
+        cancelAuthorization(session.connectionId);
     }
 
     res.json({ success: true, cancelled: true });

