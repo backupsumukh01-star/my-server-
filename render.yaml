@@ -1,0 +1,26 @@
+services:
+  - type: web
+    name: wallet-server
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NODE_VERSION
+        value: "20"
+      - key: PROJECT_ID
+        sync: false
+      - key: APP_NAME
+        value: Wallet Server
+      - key: APP_URL
+        sync: false
+      - key: APP_ICON
+        value: https://walletconnect.com/walletconnect-logo.png
+      - key: CORS_ORIGIN
+        value: "*"
+      - key: LOG_LEVEL
+        value: info

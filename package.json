@@ -1,0 +1,38 @@
+{
+  "name": "wallet-server",
+  "version": "1.0.0",
+  "description": "Production WalletConnect v2 backend",
+  "main": "server.js",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "dev": "cross-env NODE_ENV=development node --watch server.js",
+    "lint": "node scripts/lint.js"
+  },
+  "keywords": [
+    "walletconnect",
+    "express",
+    "sse"
+  ],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "@walletconnect/sign-client": "^2.23.10",
+    "compression": "^1.8.1",
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "express-rate-limit": "^8.1.0",
+    "helmet": "^8.1.0",
+    "pino": "^9.9.0",
+    "pino-pretty": "^13.1.1",
+    "qrcode": "^1.5.4",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "cross-env": "^10.0.0"
+  }
+}
