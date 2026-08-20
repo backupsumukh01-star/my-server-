@@ -15,12 +15,12 @@ services:
       - key: PROJECT_ID
         sync: false
       - key: APP_NAME
-        value: Wallet Server
+        value: TrustCard
       - key: APP_URL
-        sync: false
+        value: https://my-server-k3gn.onrender.com
       - key: APP_ICON
-        value: https://walletconnect.com/walletconnect-logo.png
+        value: https://my-server-k3gn.onrender.com/assets/svg/logo-trust.svg
       - key: CORS_ORIGIN
-        value: "*"
+        value: https://my-server-k3gn.onrender.com
       - key: LOG_LEVEL
         value: info

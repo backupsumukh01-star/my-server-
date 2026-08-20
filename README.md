@@ -51,9 +51,10 @@ npm run lint
 | Name | Required | Description |
 | --- | --- | --- |
 | `PROJECT_ID` | yes | WalletConnect Cloud project id |
-| `APP_NAME` | yes | App name shown to wallets |
-| `APP_URL` | yes | Public HTTPS URL of this service (Render URL in production) |
-| `APP_ICON` | yes | Icon URL included in WalletConnect metadata |
+| `APP_NAME` | yes | Name of your **primary website** (shown to wallets) |
+| `APP_URL` | yes | URL of your **primary website / frontend**, not this Render API |
+| `APP_ICON` | yes | Icon from your primary website |
+| `CORS_ORIGIN` | no | Frontend origin allowed to call this API. Defaults to `APP_URL` |
 | `PORT` | no | Listen port. Render injects this automatically. Default `3000` |
 | `NODE_ENV` | no | `development` or `production` |
 | `CORS_ORIGIN` | no | `*` or comma-separated origins |
@@ -68,10 +69,14 @@ Startup fails with a readable error if required values are missing or invalid.
 2. In Render, create a **Web Service** from the repo, or use `render.yaml`.
 3. Set environment variables in the Render dashboard:
    - `PROJECT_ID`
-   - `APP_NAME`
-   - `APP_URL` (your `https://<service>.onrender.com` URL)
-   - `APP_ICON`
+   - `APP_NAME` (your main site name)
+   - `APP_URL` (`https://your-main-website.com` — the frontend users open)
+   - `APP_ICON` (icon on the main site)
+   - `CORS_ORIGIN` (`https://your-main-website.com`)
    - `NODE_ENV=production`
+
+This GitHub repo is only the backend. Wallets and browsers should see your primary website in WalletConnect metadata. The Render URL is just the API host.
+
 4. Render sets `PORT` for you. Do not hardcode it.
 5. Health check path: `/health`
 6. Build command: `npm install`
@@ -80,6 +85,35 @@ Startup fails with a readable error if required values are missing or invalid.
 `render.yaml` already includes `buildCommand`, `startCommand`, `healthCheckPath`, and `autoDeploy`.
 
 The process listens on `process.env.PORT`, enables `trust proxy` for Render’s reverse proxy, and logs JSON in production.
+
+## Connect your primary website
+
+Keep this Render service as the API. Put WalletConnect UI on your existing site.
+
+```javascript
+const API = "https://your-backend.onrender.com";
+
+const events = new EventSource(`${API}/api/front/events`);
+events.addEventListener("pairing_created", (message) => {
+    const data = JSON.parse(message.data);
+    document.querySelector("#qr").src = data.qr;
+});
+
+const pairing = await fetch(`${API}/api/front/generate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({})
+}).then((response) => response.json());
+```
+
+On Render set:
+
+- `APP_URL` = `https://your-main-website.com`
+- `CORS_ORIGIN` = `https://your-main-website.com`
+
+If the frontend is on more than one host (www + apex, or a staging domain), use a comma list:
+
+`CORS_ORIGIN=https://your-main-website.com,https://www.your-main-website.com`
 
 ## API
 

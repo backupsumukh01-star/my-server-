@@ -10,11 +10,13 @@ function getHome(req, res) {
         version: "2.0",
         endpoints: [
             "GET /",
+            "GET /api",
             "GET /health",
             "GET /metrics",
             "GET /api/front/events",
             "POST /api/front/generate",
             "POST /api/front/auto-approve",
+            "POST /api/front/contact",
             "GET /api/front/sessions",
             "GET /api/front/session/:id"
         ]

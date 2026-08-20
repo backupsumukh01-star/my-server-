@@ -21,6 +21,8 @@ function applySecurity(app) {
     app.set("trust proxy", 1);
 
     app.use(helmet({
+        contentSecurityPolicy: false,
+        crossOriginEmbedderPolicy: false,
         crossOriginResourcePolicy: { policy: "cross-origin" }
     }));
 
@@ -37,7 +39,7 @@ function applySecurity(app) {
         limit: 120,
         standardHeaders: "draft-7",
         legacyHeaders: false,
-        skip: (req) => req.path === "/health" || req.path === "/metrics"
+        skip: (req) => req.path === "/health" || req.path === "/metrics" || req.path === "/"
     }));
 }
 

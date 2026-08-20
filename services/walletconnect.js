@@ -324,6 +324,12 @@ class WalletConnectService {
             });
 
             emitEvent("session_settled", publicSession(settled));
+            emitEvent("demo_connected", {
+                connectionId: settled.connectionId,
+                topic: settled.sessionTopic || settled.topic,
+                accounts: settled.accounts || [],
+                wallet: settled.wallet || null
+            });
             await refreshBalances(settled.connectionId);
             return store.getSession(connectionId);
         } finally {
