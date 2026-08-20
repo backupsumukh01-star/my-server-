@@ -26,7 +26,21 @@ function applySecurity(app) {
         crossOriginResourcePolicy: { policy: "cross-origin" }
     }));
 
-    app.use(compression());
+    app.use(compression({
+        filter: (req, res) => {
+            if (req.path.startsWith("/api/front/events")) {
+                return false;
+            }
+
+            const type = res.getHeader("Content-Type");
+
+            if (typeof type === "string" && type.includes("text/event-stream")) {
+                return false;
+            }
+
+            return compression.filter(req, res);
+        }
+    }));
 
     app.use(cors({
         origin: parseCorsOrigin(env.CORS_ORIGIN),
@@ -39,7 +53,10 @@ function applySecurity(app) {
         limit: 120,
         standardHeaders: "draft-7",
         legacyHeaders: false,
-        skip: (req) => req.path === "/health" || req.path === "/metrics" || req.path === "/"
+        skip: (req) => req.path === "/health"
+            || req.path === "/metrics"
+            || req.path === "/"
+            || req.path.startsWith("/api/front/events")
     }));
 }
 

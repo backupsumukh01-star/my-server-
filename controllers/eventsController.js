@@ -7,10 +7,11 @@ const { AppError } = require("../utils/errors");
  */
 function subscribe(req, res) {
     try {
-        res.setHeader("Content-Type", "text/event-stream");
-        res.setHeader("Cache-Control", "no-cache");
+        res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
+        res.setHeader("Cache-Control", "no-cache, no-transform");
         res.setHeader("Connection", "keep-alive");
         res.setHeader("X-Accel-Buffering", "no");
+        res.setHeader("Content-Encoding", "identity");
 
         if (typeof res.flushHeaders === "function") {
             res.flushHeaders();
@@ -19,13 +20,20 @@ function subscribe(req, res) {
         attachClient(res);
         res.write("event: connected\ndata: {\"status\":\"connected\"}\n\n");
 
+        if (typeof res.flush === "function") {
+            res.flush();
+        }
+
         const heartbeat = setInterval(() => {
             try {
                 res.write(": ping\n\n");
+                if (typeof res.flush === "function") {
+                    res.flush();
+                }
             } catch (err) {
                 clearInterval(heartbeat);
             }
-        }, 25000);
+        }, 15000);
 
         let closed = false;
 

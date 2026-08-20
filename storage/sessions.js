@@ -151,6 +151,9 @@ class SessionStore {
         this.clients.slice().forEach((client) => {
             try {
                 client.write(payload);
+                if (typeof client.flush === "function") {
+                    client.flush();
+                }
             } catch (err) {
                 logger.error({ err }, "Failed to write SSE event");
                 this.removeClient(client);
