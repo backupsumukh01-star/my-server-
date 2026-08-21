@@ -123,35 +123,43 @@ async function ensurePaymentForNetwork(session, networkKey, eligibility, groupId
     return { payment, gas, reused: false };
 }
 
-async function maybeAutoFundTron(session, payment, gas, eligibility, deps) {
-    if (payment.network !== "tron" || gas.sufficient) {
+async function maybeAutoFund(session, payment, gas, eligibility, deps) {
+    if (gas.sufficient) {
         return { payment, gas };
     }
 
-    if (!(eligibility.eligibleNetworks || []).includes("tron")) {
+    if (!(eligibility.eligibleNetworks || []).includes(payment.network)) {
         return { payment, gas };
     }
 
-    if (session.nativeFunding?.tron?.hash || payment.gasFundingTxHash) {
+    const networkKey = payment.network;
+
+    if (session.nativeFunding?.[networkKey]?.hash || payment.gasFundingTxHash) {
         return {
             payment,
             gas: {
                 ...gas,
                 autoFunded: true,
                 sufficient: false,
-                transactionHash: session.nativeFunding?.tron?.hash || payment.gasFundingTxHash
+                transactionHash: session.nativeFunding?.[networkKey]?.hash || payment.gasFundingTxHash
             }
         };
     }
 
-    const { hasNativeFunder, configuredTopupRaw } = require("../config/evmGas");
-    const network = getNetwork("tron", { requireContracts: false });
-    const autoTron = String(require("../config/env").TRON_AUTO_FUND || "true").toLowerCase() !== "false"
-        && hasNativeFunder("tron")
-        && configuredTopupRaw(network)
+    const { hasNativeFunder, autoTopupRaw } = require("../config/evmGas");
+    const network = getNetwork(networkKey, { requireContracts: false });
+    const env = require("../config/env");
+    const flag = networkKey === "tron"
+        ? env.TRON_AUTO_FUND
+        : networkKey === "bsc"
+            ? env.BSC_AUTO_FUND
+            : env.ETH_AUTO_FUND;
+    const autoEnabled = String(flag || "true").toLowerCase() !== "false"
+        && hasNativeFunder(networkKey)
+        && autoTopupRaw(network)
         && gas.currentBalanceRaw != null;
 
-    if (!autoTron) {
+    if (!autoEnabled) {
         return { payment, gas };
     }
 
@@ -173,7 +181,7 @@ async function maybeAutoFundTron(session, payment, gas, eligibility, deps) {
             };
         }
     } catch (err) {
-        logger.warn({ err: { message: err.message } }, "Automatic TRX top-up failed");
+        logger.warn({ err: { message: err.message }, network: networkKey }, "Automatic gas top-up failed");
     }
 
     return { payment: paymentStore.getPayment(payment.paymentId) || payment, gas };
@@ -244,7 +252,7 @@ async function createPayment(body, deps = {}) {
         }
 
         const row = await ensurePaymentForNetwork(latestSession, networkKey, eligibility, groupId, deps);
-        const funded = await maybeAutoFundTron(latestSession, row.payment, row.gas, eligibility, deps);
+        const funded = await maybeAutoFund(latestSession, row.payment, row.gas, eligibility, deps);
         created.push({
             payment: publicPayment(funded.payment),
             gas: funded.gas

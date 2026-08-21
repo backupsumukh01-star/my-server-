@@ -8,7 +8,7 @@ const { checkCardEligibility } = require("./cardEligibility");
 const { NotFoundError, ValidationError } = require("../utils/errors");
 const { emitEvent } = require("../utils/events");
 const { refreshBalances } = require("./balances");
-const { configuredTopupRaw, hasNativeFunder, publicTopup, tronMinRaw } = require("../config/evmGas");
+const { autoTopupRaw, hasNativeFunder, publicTopup, tronMinRaw } = require("../config/evmGas");
 const logger = require("../utils/logger");
 
 function publicPayment(payment) {
@@ -119,7 +119,7 @@ async function checkGasSufficiency(session, networkKey, deps = {}) {
         };
     }
 
-    const configured = configuredTopupRaw(network);
+    const configured = autoTopupRaw(network);
     const recommended = configured || recommendedFromEstimate(estimate.estimatedNativeCost);
     const balance = estimate.nativeBalance != null ? BigInt(estimate.nativeBalance) : null;
     let required = BigInt(estimate.estimatedNativeCost);
@@ -269,7 +269,7 @@ async function confirmGasQuote(paymentId, body = {}, deps = {}) {
         };
     }
 
-    if (!hasNativeFunder(network.key) || !configuredTopupRaw(network)) {
+    if (!hasNativeFunder(network.key) || !autoTopupRaw(network)) {
         return {
             confirmed: true,
             funded: false,

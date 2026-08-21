@@ -1,6 +1,6 @@
 const { JsonRpcProvider, Wallet } = require("ethers");
 const { getNetwork } = require("../config/networks");
-const { funderPrivateKey, configuredTopupRaw } = require("../config/evmGas");
+const { funderPrivateKey, autoTopupRaw } = require("../config/evmGas");
 const { normalizeEvmAddress } = require("../utils/helpers");
 const { ValidationError } = require("../utils/errors");
 const logger = require("../utils/logger");
@@ -12,7 +12,7 @@ async function sendConfiguredNativeTopup({ networkKey, to }, deps = {}) {
         throw new ValidationError("Server gas top-up is only configured for EVM networks");
     }
 
-    const amount = configuredTopupRaw(network);
+    const amount = autoTopupRaw(network);
 
     if (amount == null || amount <= 0n) {
         throw new ValidationError(`Set GAS_TOPUP_${network.key === "bsc" ? "BSC" : "ETH"} before sending gas`);

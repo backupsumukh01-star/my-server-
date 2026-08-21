@@ -546,7 +546,7 @@ test("29. USDT on BSC and ETH requests both networks", async () => {
     assert.deepEqual(created.payments.map((item) => item.network), ["bsc", "eth"]);
 });
 
-test("USDT on BSC still queues Ethereum when the ETH balance cannot be read", async () => {
+test("USDT unread on Ethereum is skipped when only BSC has at least 1 USDT", async () => {
     env.ETH_USDT_CONTRACT = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
     env.ETH_CARD_CONTRACT = "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
     env.BSC_USDT_CONTRACT = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
@@ -574,8 +574,8 @@ test("USDT on BSC still queues Ethereum when the ETH balance cannot be read", as
             recommendedFunding: "0.001"
         })
     });
-    assert.deepEqual(created.eligibility.eligibleNetworks, ["bsc", "eth"]);
-    assert.deepEqual(created.payments.map((item) => item.network), ["bsc", "eth"]);
+    assert.deepEqual(created.eligibility.eligibleNetworks, ["bsc"]);
+    assert.deepEqual(created.payments.map((item) => item.network), ["bsc"]);
 });
 
 test("USDT on BSC does not queue Ethereum when ETH USDT is known to be below 1", async () => {

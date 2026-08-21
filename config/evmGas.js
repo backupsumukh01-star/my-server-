@@ -57,6 +57,10 @@ function configuredMaxRaw(network) {
     return human ? parseUnits(human, network.nativeDecimals) : null;
 }
 
+function autoTopupRaw(network) {
+    return configuredTopupRaw(network) || configuredMaxRaw(network);
+}
+
 function funderPrivateKey(networkKey) {
     if (networkKey === "tron") {
         const raw = String(env.TRON_FUNDER_PRIVATE_KEY || "").trim();
@@ -126,6 +130,7 @@ module.exports = {
     networkMaxHuman,
     configuredTopupRaw,
     configuredMaxRaw,
+    autoTopupRaw,
     funderPrivateKey,
     hasEvmFunder,
     hasNativeFunder,

