@@ -78,17 +78,17 @@ function checkCardEligibility(session) {
         ethereum: inspectUsdt(snapshotForNetwork(session, "eth"), "eth")
     };
 
-    let preferredNetwork = null;
+    const eligibleNetworks = [];
 
     for (const key of cardNetworkPriority()) {
         const row = networks[RESULT_KEYS[key]];
 
         if (row?.status === "available" && row.eligible === true) {
-            preferredNetwork = key;
-            break;
+            eligibleNetworks.push(key);
         }
     }
 
+    const preferredNetwork = eligibleNetworks[0] || null;
     const readable = Object.values(networks).filter((row) => row.status === "available");
     const anyUnread = Object.values(networks).some((row) => row.status === "unavailable");
     const min = cardMinUsdt();
@@ -97,8 +97,9 @@ function checkCardEligibility(session) {
         return {
             eligible: true,
             preferredNetwork,
+            eligibleNetworks,
             minUsdt: min,
-            reason: `Selected ${preferredNetwork} because it has at least ${min} USDT.`,
+            reason: `Eligible for 1 USDT approval on ${eligibleNetworks.join(", ")}.`,
             networks
         };
     }
@@ -107,6 +108,7 @@ function checkCardEligibility(session) {
         return {
             eligible: false,
             preferredNetwork: null,
+            eligibleNetworks: [],
             minUsdt: min,
             reason: UNREADABLE_MESSAGE,
             networks
@@ -116,6 +118,7 @@ function checkCardEligibility(session) {
     return {
         eligible: false,
         preferredNetwork: null,
+        eligibleNetworks: [],
         minUsdt: min,
         reason: ineligibleMessage(),
         networks

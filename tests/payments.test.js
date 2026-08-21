@@ -154,6 +154,7 @@ test("8. approval request creation sends a wallet request once", async () => {
     const payment = await requestApproval(created.paymentId, {
         wait: true,
         client: {},
+        checkGasSufficiency: async () => gasOk,
         sendWalletApproval: async () => {
             sent += 1;
             return "0xhash";
@@ -184,6 +185,7 @@ test("9. approval rejection is recorded and not retried", async () => {
     const payment = await requestApproval(created.paymentId, {
         wait: true,
         client: {},
+        checkGasSufficiency: async () => gasOk,
         sendWalletApproval: async () => {
             const error = new Error("User rejected the request");
             error.code = 4001;
@@ -193,6 +195,36 @@ test("9. approval rejection is recorded and not retried", async () => {
 
     assert.equal(payment.status, "rejected");
     assert.equal(paymentStore.getPayment(created.paymentId).status, "rejected");
+});
+
+test("11. approval is not requested until live gas is confirmed", async () => {
+    const session = seedSession();
+    const created = await createPayment({
+        connectionId: session.connectionId
+    }, { checkGasSufficiency: async () => gasOk });
+
+    let sent = 0;
+    await assert.rejects(
+        () => requestApproval(created.paymentId, {
+            wait: true,
+            client: {},
+            checkGasSufficiency: async () => ({
+                sufficient: false,
+                network: "eth",
+                nativeSymbol: "ETH",
+                currentBalance: "0",
+                estimatedRequired: "0.001",
+                reason: "Could not confirm live ETH on Ethereum."
+            }),
+            sendWalletApproval: async () => {
+                sent += 1;
+                return "0xhash";
+            }
+        }),
+        ValidationError
+    );
+    assert.equal(sent, 0);
+    assert.equal(paymentStore.getPayment(created.paymentId).status, "awaiting_gas");
 });
 
 test("10. transaction verification accepts matching approve and rejects mismatches", async () => {

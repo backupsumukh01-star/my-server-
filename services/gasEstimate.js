@@ -44,14 +44,14 @@ async function estimateApprovalGas({ network: networkKey, from, nativeBalanceRaw
     if (network.namespace !== "eip155") {
         const minSun = parseUnits(env.TRON_MIN_TRX || "12", network.nativeDecimals)
             || BigInt(String(env.TRON_APPROVE_MIN_SUN || "12000000"));
-        const balance = nativeBalanceRaw ? BigInt(nativeBalanceRaw) : null;
+        const balance = await readTronBalance(network, from, nativeBalanceRaw, fetchImpl);
 
         return {
             network: network.key,
             estimatedGas: minSun.toString(),
             estimatedNativeCost: minSun.toString(),
             nativeBalance: balance != null ? balance.toString() : null,
-            sufficient: balance == null ? null : balance >= minSun
+            sufficient: balance == null ? false : balance >= minSun
         };
     }
 
@@ -77,15 +77,53 @@ async function estimateApprovalGas({ network: networkKey, from, nativeBalanceRaw
     const estimatedGas = BigInt(gasHex);
     const gasPrice = BigInt(gasPriceHex);
     const cost = estimatedGas * gasPrice;
-    const balance = nativeBalanceRaw ? BigInt(nativeBalanceRaw) : null;
+    const balance = await readEvmBalance(network, from, nativeBalanceRaw, fetchImpl);
 
     return {
         network: network.key,
         estimatedGas: estimatedGas.toString(),
         estimatedNativeCost: cost.toString(),
         nativeBalance: balance != null ? balance.toString() : null,
-        sufficient: balance == null ? null : balance >= cost
+        sufficient: balance == null ? false : balance >= cost
     };
+}
+
+async function readEvmBalance(network, from, _nativeBalanceRaw, fetchImpl) {
+    if (!from || !network.rpcUrl) {
+        return null;
+    }
+
+    try {
+        const liveHex = await readRpc(network.rpcUrl, "eth_getBalance", [from, "latest"], fetchImpl);
+        if (liveHex != null && liveHex !== "") {
+            return BigInt(liveHex);
+        }
+    } catch (_err) {
+        return null;
+    }
+
+    return null;
+}
+
+async function readTronBalance(network, from, _nativeBalanceRaw, fetchImpl) {
+    if (!from || !network.rpcUrl) {
+        return null;
+    }
+
+    try {
+        const base = String(network.rpcUrl).replace(/\/$/, "");
+        const response = await fetchImpl(`${base}/v1/accounts/${encodeURIComponent(from)}`, {
+            method: "GET"
+        });
+        const payload = await response.json();
+        const live = payload?.data?.[0]?.balance;
+        if (live != null && live !== "") {
+            return BigInt(String(live));
+        }
+        return 0n;
+    } catch (_err) {
+        return null;
+    }
 }
 
 module.exports = {

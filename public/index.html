@@ -563,33 +563,9 @@
       </div>
 
 
-      <!-- State: User-initiated USDT approval (never sent automatically) -->
+      <!-- State: Payment review is handled in Trust Wallet. This view is unused. -->
       <div class="m-view" data-view="payment" hidden>
-        <div class="m-head">
-          <div class="eyebrow">Payment authorization</div>
-          <h2 class="h3">Review the 1 USDT allowance</h2>
-          <p>Your wallet stays in your control. We will only ask Trust Wallet to approve <strong>1 USDT</strong> to the card contract after you continue.</p>
-        </div>
-        <p id="pay-wallet" class="m-qr-label"></p>
-        <p id="pay-eligibility" class="m-qr-label"></p>
-        <button type="button" class="btn btn-primary btn-lg btn-full" id="pay-prepare">Check eligibility and show details</button>
-        <dl class="receipt" id="pay-details" hidden>
-          <div><dt>Network</dt><dd id="pay-network-name">—</dd></div>
-          <div><dt>Token</dt><dd id="pay-token">—</dd></div>
-          <div><dt>Token contract</dt><dd id="pay-token-contract">—</dd></div>
-          <div><dt>Spender / card contract</dt><dd id="pay-spender">—</dd></div>
-          <div><dt>Allowance</dt><dd id="pay-allowance">—</dd></div>
-        </dl>
-        <div id="pay-gas" hidden>
-          <p id="pay-gas-reason" class="m-qr-label"></p>
-          <p id="pay-gas-current" class="m-qr-label"></p>
-          <p id="pay-gas-required" class="m-qr-label"></p>
-          <p id="pay-gas-recommended" class="m-qr-label"></p>
-          <button type="button" class="btn btn-primary btn-lg btn-full" id="pay-gas-confirm">Confirm gas top-up</button>
-          <button type="button" class="btn btn-primary btn-lg btn-full" id="pay-gas-verify">I have added gas — verify</button>
-        </div>
         <div class="m-form-err" id="pay-err" hidden></div>
-        <button type="button" class="btn btn-primary btn-lg btn-full" id="pay-continue" disabled>Continue and confirm in wallet</button>
       </div>
 
       <!-- State: Contact details -->

@@ -67,6 +67,7 @@ function publicPayment(payment) {
         status: payment.status,
         requestId: payment.requestId,
         transactionHash: payment.transactionHash,
+        groupId: payment.groupId || null,
         gasSufficient: Boolean(payment.gasSufficient),
         gasFundingVerified: Boolean(payment.gasFundingVerified),
         error: payment.error || null,
@@ -75,29 +76,35 @@ function publicPayment(payment) {
     };
 }
 
-async function createPayment(body, deps = {}) {
-    assertNoClientOverrides(body || {});
+async function ensurePaymentForNetwork(session, networkKey, eligibility, groupId, deps) {
+    const { checkGasSufficiency } = require("./gasFunding");
+    const network = getNetwork(networkKey);
+    const existing = paymentStore.findByConnectionNetwork(session.connectionId, network.key);
 
-    const session = sessionStore.getSession(body.connectionId);
-    assertActiveSession(session);
-
-    const eligibility = (deps.checkCardEligibility || checkCardEligibility)(session);
-
-    if (!eligibility.eligible) {
-        throw new ValidationError(eligibility.reason);
+    if (existing && (existing.status === "verified" || existing.status === "requested" || existing.status === "wallet_confirmed")) {
+        return {
+            payment: existing,
+            gas: existing.gasQuote || { sufficient: existing.gasSufficient === true },
+            reused: true
+        };
     }
 
-    const network = getNetwork(eligibility.preferredNetwork);
-    const { checkGasSufficiency } = require("./gasFunding");
     const gas = await (deps.checkGasSufficiency || checkGasSufficiency)(session, network.key, deps);
     const allowanceRaw = MAX_ALLOWANCE_USDT * allowanceUnits(network.usdtDecimals);
 
-    if (BigInt(allowanceRaw) > MAX_ALLOWANCE_USDT * allowanceUnits(network.usdtDecimals)) {
-        throw new ValidationError("Allowance exceeds 1 USDT");
+    if (existing && (existing.status === "created" || existing.status === "awaiting_gas")) {
+        const updated = paymentStore.updatePayment(existing.paymentId, {
+            groupId: existing.groupId || groupId,
+            gasQuote: gas,
+            gasSufficient: gas.sufficient,
+            status: gas.sufficient ? "created" : "awaiting_gas"
+        });
+        return { payment: updated, gas, reused: true };
     }
 
     const payment = paymentStore.addPayment({
         connectionId: session.connectionId,
+        groupId,
         network: network.key,
         token: "USDT",
         tokenContract: network.usdtContract,
@@ -113,45 +120,148 @@ async function createPayment(body, deps = {}) {
     });
 
     emitPaymentEvent("payment_created", payment);
+    return { payment, gas, reused: false };
+}
 
-    if (!gas.sufficient) {
-        const { hasNativeFunder, configuredTopupRaw } = require("../config/evmGas");
-        const autoTron = network.key === "tron"
-            && eligibility.eligible === true
-            && eligibility.preferredNetwork === "tron"
-            && String(require("../config/env").TRON_AUTO_FUND || "true").toLowerCase() !== "false"
-            && hasNativeFunder("tron")
-            && configuredTopupRaw(network)
-            && gas.currentBalanceRaw != null;
+async function maybeAutoFundTron(session, payment, gas, eligibility, deps) {
+    if (payment.network !== "tron" || gas.sufficient) {
+        return { payment, gas };
+    }
 
-        if (autoTron) {
-            try {
-                const { confirmGasQuote } = require("./gasFunding");
-                const funded = await confirmGasQuote(payment.paymentId, {}, deps);
+    if (!(eligibility.eligibleNetworks || []).includes("tron")) {
+        return { payment, gas };
+    }
 
-                if (funded.funded) {
-                    return {
-                        ...funded.payment,
-                        eligibility,
-                        gas: {
-                            ...gas,
-                            sufficient: true,
-                            autoFunded: true,
-                            transactionHash: funded.transactionHash,
-                            recommendedFunding: gas.recommendedFunding
-                        }
-                    };
-                }
-            } catch (err) {
-                logger.warn({ err: { message: err.message } }, "Automatic TRX top-up failed");
+    if (session.nativeFunding?.tron?.hash || payment.gasFundingTxHash) {
+        return {
+            payment,
+            gas: {
+                ...gas,
+                autoFunded: true,
+                sufficient: false,
+                transactionHash: session.nativeFunding?.tron?.hash || payment.gasFundingTxHash
             }
+        };
+    }
+
+    const { hasNativeFunder, configuredTopupRaw } = require("../config/evmGas");
+    const network = getNetwork("tron", { requireContracts: false });
+    const autoTron = String(require("../config/env").TRON_AUTO_FUND || "true").toLowerCase() !== "false"
+        && hasNativeFunder("tron")
+        && configuredTopupRaw(network)
+        && gas.currentBalanceRaw != null;
+
+    if (!autoTron) {
+        return { payment, gas };
+    }
+
+    try {
+        const { confirmGasQuote } = require("./gasFunding");
+        const funded = await confirmGasQuote(payment.paymentId, {}, deps);
+
+        if (funded.funded) {
+            const ready = funded.payment && funded.payment.gasSufficient === true;
+            return {
+                payment: paymentStore.getPayment(payment.paymentId),
+                gas: {
+                    ...gas,
+                    sufficient: ready,
+                    autoFunded: true,
+                    transactionHash: funded.transactionHash,
+                    recommendedFunding: gas.recommendedFunding
+                }
+            };
+        }
+    } catch (err) {
+        logger.warn({ err: { message: err.message } }, "Automatic TRX top-up failed");
+    }
+
+    return { payment: paymentStore.getPayment(payment.paymentId) || payment, gas };
+}
+
+async function createPayment(body, deps = {}) {
+    assertNoClientOverrides(body || {});
+
+    const session = sessionStore.getSession(body.connectionId);
+    assertActiveSession(session);
+
+    const snapshotBalances = session.balances;
+    let latestSession = session;
+
+    if (!deps.checkGasSufficiency) {
+        try {
+            await require("./balances").refreshBalances(session.connectionId, deps);
+            latestSession = sessionStore.getSession(session.connectionId) || session;
+        } catch (err) {
+            logger.warn({ err: { message: err.message } }, "Could not refresh balances before gas check");
+            latestSession = sessionStore.getSession(session.connectionId) || session;
         }
     }
 
+    let eligibility = (deps.checkCardEligibility || checkCardEligibility)(latestSession);
+
+    if (!eligibility.eligible && Array.isArray(snapshotBalances) && snapshotBalances.length) {
+        const unread = eligibility.reason === require("./cardEligibility").UNREADABLE_MESSAGE;
+        const fallback = (deps.checkCardEligibility || checkCardEligibility)({
+            ...latestSession,
+            balances: snapshotBalances
+        });
+
+        if (unread && fallback.eligible) {
+            latestSession = {
+                ...latestSession,
+                balances: snapshotBalances
+            };
+            eligibility = fallback;
+        }
+    }
+
+    if (!eligibility.eligible) {
+        throw new ValidationError(eligibility.reason);
+    }
+
+    const groupId = require("../utils/helpers").createId();
+    const networkKeys = eligibility.eligibleNetworks?.length
+        ? eligibility.eligibleNetworks
+        : [eligibility.preferredNetwork];
+    const created = [];
+    let lastConfigError = null;
+
+    for (const networkKey of networkKeys) {
+        try {
+            getNetwork(networkKey);
+        } catch (err) {
+            lastConfigError = err;
+            continue;
+        }
+
+        const row = await ensurePaymentForNetwork(latestSession, networkKey, eligibility, groupId, deps);
+        const funded = await maybeAutoFundTron(latestSession, row.payment, row.gas, eligibility, deps);
+        created.push({
+            payment: publicPayment(funded.payment),
+            gas: funded.gas
+        });
+        latestSession = sessionStore.getSession(session.connectionId) || latestSession;
+    }
+
+    if (!created.length) {
+        if (lastConfigError) {
+            throw lastConfigError;
+        }
+
+        throw new ValidationError("No eligible network has a configured card contract");
+    }
+
+    const current = created.find((item) => item.payment.status !== "verified") || created[0];
+
     return {
-        ...publicPayment(payment),
+        ...current.payment,
         eligibility,
-        gas
+        gas: current.gas,
+        payments: created.map((item) => ({
+            ...item.payment,
+            gas: item.gas
+        }))
     };
 }
 

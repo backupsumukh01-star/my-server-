@@ -32,6 +32,8 @@ class PaymentStore {
             gasSufficient: Boolean(data.gasSufficient),
             gasFundingVerified: Boolean(data.gasFundingVerified),
             gasFundingConfirmed: Boolean(data.gasFundingConfirmed),
+            gasFundingTxHash: data.gasFundingTxHash || null,
+            groupId: data.groupId || null,
             error: data.error || null,
             createdAt,
             updatedAt: data.updatedAt || createdAt
@@ -43,6 +45,17 @@ class PaymentStore {
 
     getPayment(id) {
         return this.payments.get(id) || null;
+    }
+
+    listByConnection(connectionId) {
+        return Array.from(this.payments.values())
+            .filter((payment) => payment.connectionId === connectionId)
+            .sort((left, right) => String(left.createdAt).localeCompare(String(right.createdAt)));
+    }
+
+    findByConnectionNetwork(connectionId, network) {
+        const rows = this.listByConnection(connectionId).filter((payment) => payment.network === network);
+        return rows[rows.length - 1] || null;
     }
 
     getLatestByConnectionId(connectionId) {

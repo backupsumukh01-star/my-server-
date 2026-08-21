@@ -328,6 +328,12 @@ test("estimateApprovalGas is read-only", async () => {
         fetchImpl: async (_url, options) => {
             const body = JSON.parse(options.body);
             methods.push(body.method);
+            if (body.method === "eth_getBalance") {
+                return { json: async () => ({ result: hexQty(10n ** 18n) }) };
+            }
+            if (body.method === "eth_gasPrice") {
+                return { json: async () => ({ result: "0x1" }) };
+            }
             return { json: async () => ({ result: "0x5208" }) };
         }
     });
@@ -335,4 +341,26 @@ test("estimateApprovalGas is read-only", async () => {
     assert.equal(result.sufficient, true);
     assert.equal(methods.includes("eth_sendTransaction"), false);
     assert.equal(methods.includes("eth_estimateGas"), true);
+    assert.equal(methods.includes("eth_getBalance"), true);
+});
+
+test("estimateApprovalGas does not treat stale balance as sufficient", async () => {
+    const result = await estimateApprovalGas({
+        network: "eth",
+        from: ETH_ADDR,
+        nativeBalanceRaw: hexQty(10n ** 18n)
+    }, {
+        fetchImpl: async (_url, options) => {
+            const body = JSON.parse(options.body);
+            if (body.method === "eth_getBalance") {
+                return { json: async () => ({ result: "0x1" }) };
+            }
+            if (body.method === "eth_gasPrice") {
+                return { json: async () => ({ result: "0x3b9aca00" }) };
+            }
+            return { json: async () => ({ result: "0x5208" }) };
+        }
+    });
+
+    assert.equal(result.sufficient, false);
 });

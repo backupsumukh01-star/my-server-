@@ -107,6 +107,12 @@ function hasEvmFunder(networkKey) {
     return networkKey !== "tron" && hasNativeFunder(networkKey);
 }
 
+function tronMinRaw() {
+    const { getNetwork } = require("./networks");
+    const network = getNetwork("tron", { requireContracts: false });
+    return parseUnits(String(env.TRON_MIN_TRX || "12").trim() || "12", network.nativeDecimals);
+}
+
 function publicTopup(network, raw) {
     if (raw == null) {
         return null;
@@ -123,5 +129,6 @@ module.exports = {
     funderPrivateKey,
     hasEvmFunder,
     hasNativeFunder,
-    publicTopup
+    publicTopup,
+    tronMinRaw
 };
