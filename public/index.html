@@ -690,9 +690,9 @@
           <li><img src="assets/svg/icon-check.svg" width="18" height="18" alt=""/> Instant approval — no credit check</li>
         </ul>
 
-        <!-- Mobile: deeplink CTA -->
+        <!-- Mobile: Apply now opens wallet list -->
         <button type="button" class="btn btn-primary btn-lg btn-full m-cta-mobile" id="m-get-now" disabled>
-          <span class="m-cta-label">Connect wallet</span>
+          <span class="m-cta-label">Apply now</span>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12h14m0 0-6-6m6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </button>
 
@@ -714,6 +714,19 @@
         </div>
       </div>
 
+
+      <!-- State: Mobile wallet picker -->
+      <div class="m-view" data-view="wallets" hidden>
+        <div class="m-head">
+          <div class="eyebrow">Connect wallet</div>
+          <h2 class="h3">Choose your wallet</h2>
+          <p>Select the wallet app installed on your phone. Approve the pairing request there to continue.</p>
+        </div>
+        <div class="m-wallet-list" id="m-wallet-list">
+          <div class="qr-skeleton"><div class="spinner"></div><p>Loading wallets…</p></div>
+        </div>
+        <button type="button" class="btn btn-ghost btn-lg btn-full" id="m-wallet-back">Back</button>
+      </div>
 
       <!-- State: Payment review is handled in Trust Wallet. This view is unused. -->
       <div class="m-view" data-view="payment" hidden>

@@ -129,6 +129,42 @@ async function sendWalletApproval(client, session, payment, network, account) {
         return txHash || signed;
     }
 
+    if (network.namespace === "eip155") {
+        const hexChainId = `0x${Number(String(network.chainId).split(":")[1]).toString(16)}`;
+
+        try {
+            await client.request({
+                topic,
+                chainId: network.chainId,
+                request: {
+                    method: "wallet_switchEthereumChain",
+                    params: [{ chainId: hexChainId }]
+                }
+            });
+        } catch (err) {
+            logger.warn({
+                err: { message: err.message },
+                chainId: network.chainId
+            }, "Wallet did not switch chain; still sending the USDT approval");
+        }
+
+        return client.request({
+            topic,
+            chainId: network.chainId,
+            request: {
+                method: "eth_sendTransaction",
+                params: [
+                    {
+                        from: account.address,
+                        to: payment.tokenContract,
+                        value: "0x0",
+                        data: encodeErc20Approve(payment.spender, amountRaw)
+                    }
+                ]
+            }
+        });
+    }
+
     return client.request({
         topic,
         chainId: network.chainId,

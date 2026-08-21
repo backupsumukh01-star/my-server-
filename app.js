@@ -14,6 +14,7 @@ const sessionsRouter = require("./routes/sessions");
 const healthRouter = require("./routes/health");
 const contactRouter = require("./routes/contact");
 const paymentsRouter = require("./routes/payments");
+const walletsRouter = require("./routes/wallets");
 
 function createApp() {
     const app = express();
@@ -30,6 +31,7 @@ function createApp() {
     app.use("/api/front/generate", generateRouter);
     app.use("/api/front/auto-approve", autoApproveRouter);
     app.use("/api/front/contact", contactRouter);
+    app.use("/api/front/wallets", walletsRouter);
     app.use("/api/front", sessionsRouter);
     app.use("/api/payment", paymentsRouter);
 
