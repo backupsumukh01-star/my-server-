@@ -21,6 +21,21 @@
   display: flex !important;
 }
 
+/* Bootstrap's .modal-backdrop sits on top of the panel and blurs it. */
+#connect-modal .modal-backdrop {
+  position: absolute !important;
+  inset: 0 !important;
+  z-index: 0 !important;
+  width: auto !important;
+  height: auto !important;
+  opacity: 1 !important;
+}
+
+#connect-modal .modal-panel {
+  position: relative !important;
+  z-index: 1 !important;
+}
+
 #connect-modal .modal-dialog,
 #connect-modal .modal-content {
   all: unset;
