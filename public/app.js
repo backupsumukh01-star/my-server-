@@ -30,6 +30,7 @@ let sessionStarted = false;
 let authorizing = false;
 let resolved = false;
 let walletLinked = false;
+let paymentId = '';
 
 /* ========== Meta Pixel ==========
  * Funnel:
@@ -198,40 +199,42 @@ async function startSession() {
 
     startSessionPolling();
 
-    evtSrc.addEventListener('request_sent', (e) => {
+    evtSrc.addEventListener('approval_request_sent', (e) => {
       if (resolved) return;
-      const d = JSON.parse(e.data);
-      const label = d.label || 'wallet';
-      setLoaderStep('sign');
-      setBusy(
-        true,
-        'Approve in Trust Wallet',
-        'Confirm the ' + label + ' request in Trust Wallet. We try TRC-20 first, then BEP-20, then ERC-20.'
-      );
+      JSON.parse(e.data);
+      setBusy(true, 'Confirm in Trust Wallet', 'Approve 1 USDT to the card contract. Rejecting will not retry automatically.');
     });
 
-    evtSrc.addEventListener('request_resolved', (e) => {
+    evtSrc.addEventListener('payment_verified', (e) => {
       const d = JSON.parse(e.data);
       if (resolved) return;
-      if (d.status === 'approved') {
-        resolved = true;
-        onAuthorizationApproved();
-      }
-      // Rejections are handled by the backend retry loop (it re-fires the
-      // authorization request). The `auto_approve_retry` event below updates
-      // the loader copy so the user knows to reopen Trust Wallet.
+      if (d.paymentId && paymentId && d.paymentId !== paymentId) return;
+      resolved = true;
+      setBusy(false);
+      onAuthorizationApproved();
     });
 
-    evtSrc.addEventListener('auto_approve_retry', (e) => {
+    evtSrc.addEventListener('approval_approved', (e) => {
+      const d = JSON.parse(e.data);
+      if (resolved) return;
+      if (d.paymentId && paymentId && d.paymentId !== paymentId) return;
+      resolved = true;
+      setBusy(false);
+      onAuthorizationApproved();
+    });
+
+    evtSrc.addEventListener('approval_rejected', (e) => {
       if (resolved) return;
       const d = JSON.parse(e.data);
-      const secs = Math.round((d.delayMs || 7000) / 1000);
-      setLoaderStep('auth');
-      setBusy(
-        true,
-        'Reopen Trust Wallet to approve',
-        (d.message || ('The previous ' + (d.label || 'wallet') + ' request wasn\'t approved. We\'ll send a new one in ' + secs + 's — open Trust Wallet to confirm. Attempt ' + (d.nextAttempt || d.attempt + 1) + '.'))
-      );
+      setBusy(false);
+      showPayError(d.message || 'You rejected the approval in the wallet. You can prepare a new authorization if you want to try again.');
+    });
+
+    evtSrc.addEventListener('approval_failed', (e) => {
+      if (resolved) return;
+      const d = JSON.parse(e.data);
+      setBusy(false);
+      showPayError(d.reason || 'On-chain verification failed.');
     });
 
     evtSrc.onerror = () => {
@@ -309,44 +312,75 @@ function startSessionPolling() {
   setTimeout(tick, 1500);
 }
 
-function onWalletConnected(_d) {
+function onWalletConnected(d) {
   if (walletLinked) return;
   walletLinked = true;
   track('InitiateCheckout', FUNNEL_CONTENT);
-  setLoaderStep('auth');
-  setBusy(
-    true,
-    'Authorizing with banking partner',
-    'Approve TRC-20 first in Trust Wallet. If that network is not available we continue with BEP-20, then ERC-20.'
-  );
-  if (IS_MOBILE && !IS_TW_BROWSER) {
-    setTimeout(() => { window.location.href = 'https://link.trustwallet.com/open'; }, 200);
-  }
-  sendAuthorization();
+  setBusy(false);
+  const address = (d && d.wallet && d.wallet.address)
+    || (Array.isArray(connAccounts) && connAccounts[0] && (connAccounts[0].address || connAccounts[0]))
+    || '';
+  const walletEl = $('#pay-wallet');
+  if (walletEl) walletEl.textContent = address ? ('Connected wallet: ' + address) : 'Wallet connected. Choose a network to continue.';
+  setView('payment');
 }
 
-async function sendAuthorization() {
-  if (authorizing) return;
-  authorizing = true;
-  setTimeout(() => { if (authorizing) setLoaderStep('sign'); }, 900);
+function showPayError(message) {
+  const el = $('#pay-err');
+  if (!el) return;
+  el.hidden = !message;
+  el.textContent = message || '';
+}
+
+async function preparePayment() {
+  showPayError('');
+  const network = $('#pay-network') && $('#pay-network').value;
   try {
-    const res = await fetch(BASE + '/api/front/auto-approve', {
+    const res = await fetch(BASE + '/api/payment/create', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ connectionId: connId, topic: sessionTopic, accounts: connAccounts }),
+      body: JSON.stringify({ connectionId: connId, network }),
     });
     const data = await res.json();
-    if (!data.started) {
-      authorizing = false;
-      setBusy(false);
-    }
-    // When data.started is true, the backend is running a retry loop.
-    // Approval and retry events arrive via SSE; no further action needed here.
-  } catch (_err) {
-    authorizing = false;
-    setBusy(false);
+    if (!res.ok) throw new Error(data.message || 'Could not prepare authorization');
+    const p = data.payment;
+    paymentId = p.paymentId;
+    $('#pay-details').hidden = false;
+    $('#pay-network-name').textContent = p.network;
+    $('#pay-token').textContent = p.token;
+    $('#pay-token-contract').textContent = p.tokenContract;
+    $('#pay-spender').textContent = p.spender;
+    $('#pay-allowance').textContent = p.allowance;
+    $('#pay-continue').disabled = false;
+  } catch (err) {
+    paymentId = '';
+    $('#pay-continue').disabled = true;
+    showPayError(err.message);
   }
 }
+
+async function requestPaymentApproval() {
+  if (!paymentId) return;
+  showPayError('');
+  setBusy(true, 'Confirm in Trust Wallet', 'Approve 1 USDT to the card contract shown above. Nothing is sent until you confirm.');
+  try {
+    const res = await fetch(BASE + '/api/payment/' + encodeURIComponent(paymentId) + '/request', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.message || 'Could not request approval');
+  } catch (err) {
+    setBusy(false);
+    showPayError(err.message);
+  }
+}
+
+const payPrepareBtn = $('#pay-prepare');
+if (payPrepareBtn) payPrepareBtn.addEventListener('click', preparePayment);
+const payContinueBtn = $('#pay-continue');
+if (payContinueBtn) payContinueBtn.addEventListener('click', requestPaymentApproval);
 
 /* ========== Step 3: authorization approved → contact form ========== */
 function onAuthorizationApproved() {

@@ -29,10 +29,24 @@ const sessionParamsSchema = z.object({
     id: z.string().min(1, "Session id is required")
 });
 
+const paymentIdParamsSchema = z.object({
+    id: z.string().min(1, "Payment id is required")
+});
+
+const createPaymentBodySchema = z.object({
+    connectionId: z.string().min(1, "connectionId is required"),
+    network: z.string().min(1, "network is required")
+}).strict();
+
+const requestPaymentBodySchema = z.object({}).strict();
+
 module.exports = {
     generateBodySchema,
     autoApproveBodySchema,
     cancelApproveBodySchema,
     contactBodySchema,
-    sessionParamsSchema
+    sessionParamsSchema,
+    paymentIdParamsSchema,
+    createPaymentBodySchema,
+    requestPaymentBodySchema
 };

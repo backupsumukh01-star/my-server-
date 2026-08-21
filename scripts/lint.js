@@ -2,7 +2,7 @@ const fs = require("fs");
 const path = require("path");
 const { execFileSync } = require("child_process");
 
-const roots = ["server.js", "config", "controllers", "middleware", "routes", "services", "storage", "utils", "scripts"];
+const roots = ["server.js", "app.js", "config", "controllers", "middleware", "routes", "services", "storage", "utils", "scripts", "tests"];
 
 function collect(target, files = []) {
     const full = path.join(process.cwd(), target);

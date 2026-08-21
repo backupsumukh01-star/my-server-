@@ -54,9 +54,17 @@ class WalletConnectError extends AppError {
     }
 }
 
+class ConfigurationError extends AppError {
+    constructor(message = "Server contract configuration is incomplete") {
+        super(message, 503, "CONFIGURATION_ERROR");
+        this.name = "ConfigurationError";
+    }
+}
+
 module.exports = {
     AppError,
     NotFoundError,
     ValidationError,
-    WalletConnectError
+    WalletConnectError,
+    ConfigurationError
 };

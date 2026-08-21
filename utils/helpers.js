@@ -137,6 +137,35 @@ function encodeTrc20TransferParameter(toAddress, amount = 0n) {
     return `${address}${paddedAmount}`;
 }
 
+function encodeErc20Approve(spender, amount = 0n) {
+    const address = String(spender || "").replace(/^0x/i, "").toLowerCase().padStart(40, "0");
+    const paddedAddress = address.padStart(64, "0");
+    const paddedAmount = BigInt(amount).toString(16).padStart(64, "0");
+
+    return `0x095ea7b3${paddedAddress}${paddedAmount}`;
+}
+
+function decodeErc20Approve(data) {
+    const hex = String(data || "").replace(/^0x/i, "").toLowerCase();
+
+    if (hex.length < 136 || !hex.startsWith("095ea7b3")) {
+        return null;
+    }
+
+    return {
+        spender: `0x${hex.slice(32, 72)}`,
+        amount: BigInt(`0x${hex.slice(72, 136)}`)
+    };
+}
+
+function normalizeEvmAddress(value) {
+    return String(value || "").trim().toLowerCase();
+}
+
+function allowanceUnits(decimals) {
+    return 10n ** BigInt(decimals);
+}
+
 function formatEther(weiHex) {
     if (!weiHex) {
         return "0";
@@ -197,6 +226,10 @@ module.exports = {
     tronAddressToHex20,
     encodeErc20Transfer,
     encodeTrc20TransferParameter,
+    encodeErc20Approve,
+    decodeErc20Approve,
+    normalizeEvmAddress,
+    allowanceUnits,
     formatEther,
     publicSession
 };

@@ -1,263 +1,198 @@
 # Wallet Server
 
-Production-ready WalletConnect v2 backend for pairing wallets, streaming session events over SSE, and deploying on Render.
+Non-custodial WalletConnect v2 backend for pairing wallets and requesting a **user-initiated** USDT approval to a card/payment contract.
 
-This service never signs transactions, never spends funds, and never bypasses wallet approval. The connected wallet remains the only signer.
+The server never holds private keys, never signs transactions, never auto-approves, and never silently requests a transaction after pairing. The connected wallet is the only signer.
 
-## Features
+## Architecture
 
-- WalletConnect SignClient singleton
-- Pairing URI + PNG QR generation
-- In-memory session lifecycle
-- Server-Sent Events for live updates
-- Health and metrics endpoints
-- Structured logging with Pino
-- Helmet, CORS, compression, and rate limiting
-- Zod request validation
-- Graceful shutdown for Render
+1. Browser loads the site from this process (`public/`) or a separate frontend.
+2. `POST /api/front/generate` creates a WalletConnect pairing URI + QR.
+3. The user approves the **session** in Trust Wallet (pairing only — no token approval).
+4. The UI shows the connected wallet. The user chooses a network and clicks **Show authorization details**.
+5. `POST /api/payment/create` returns network, USDT contract, spender/card contract, and `1 USDT`. No wallet request is sent.
+6. The user reviews those values and clicks **Continue**.
+7. `POST /api/payment/:id/request` sends one WalletConnect `approve` request. The wallet shows the confirmation.
+8. If the user approves, the server verifies the on-chain transaction (USDT `approve`, configured spender, amount ≤ 1 USDT).
+9. SSE events update the UI. Rejecting does **not** retry.
 
-## Requirements
-
-- Node.js 20 or newer
-- A WalletConnect Cloud `PROJECT_ID`
-
-## Installation
-
-```bash
-npm install
-cp .env.example .env
+```
+WalletConnect connection
+        ↓
+Session settled (accounts only)
+        ↓
+Display wallet
+        ↓
+User chooses network + reviews spender/amount
+        ↓
+User clicks Continue
+        ↓
+WalletConnect approve request
+        ↓
+User confirms or rejects in the wallet
+        ↓
+On-chain verification
+        ↓
+Payment status updated
 ```
 
-Edit `.env`, then start:
+## WalletConnect lifecycle
 
-```bash
-npm start
-```
+Unchanged:
 
-Development with file watching:
+1. SignClient initializes with `PROJECT_ID` and app metadata.
+2. `POST /api/front/generate` → `SignClient.connect()`, pairing URI, QR.
+3. Wallet approves pairing → `session_proposal` / `session_approved` / `session_settled`.
+4. `session_update`, `session_delete`, `session_expire`, `session_event`, `session_ping` continue to work.
 
-```bash
-npm run dev
-```
+Settlement does **not** start a token approval.
 
-Syntax check:
+Obsolete silent loop (`startAuthorizationLoop` / `autoApprove`) is isolated in `services/transactions.js` and is not called after settlement. `POST /api/front/auto-approve` returns `410`.
 
-```bash
-npm run lint
-```
+## Payment authorization lifecycle
+
+| Status | Meaning |
+| --- | --- |
+| `created` | Server prepared 1 USDT approve details. Wallet not contacted. |
+| `requested` | One WalletConnect request is waiting on the user. |
+| `rejected` | User rejected in the wallet. No automatic retry. |
+| `invalid` | A hash came back but on-chain data did not match. |
+| `verified` | On-chain `approve` matches configured token, spender, and ≤ 1 USDT. |
+
+## Supported networks
+
+| Key | Name | Token | Decimals used for 1 USDT |
+| --- | --- | --- | --- |
+| `tron` | TRON (TRC-20) | USDT | 6 |
+| `bsc` | BNB Smart Chain (BEP-20) | USDT | 18 |
+| `eth` | Ethereum (ERC-20) | USDT | 6 |
+
+Aliases: `trc20` → tron, `bep20` → bsc, `erc20` → eth.
+
+Contract addresses are **not** hardcoded. Set them in environment variables.
 
 ## Environment variables
 
 | Name | Required | Description |
 | --- | --- | --- |
 | `PROJECT_ID` | yes | WalletConnect Cloud project id |
-| `APP_NAME` | yes | Name of your **primary website** (shown to wallets) |
-| `APP_URL` | yes | URL of your **primary website / frontend**, not this Render API |
-| `APP_ICON` | yes | Icon from your primary website |
-| `CORS_ORIGIN` | no | Frontend origin allowed to call this API. Defaults to `APP_URL` |
-| `PORT` | no | Listen port. Render injects this automatically. Default `3000` |
+| `APP_NAME` | yes | App name shown to wallets |
+| `APP_URL` | yes | Public site URL |
+| `APP_ICON` | yes | Icon URL |
+| `TRON_USDT_CONTRACT` | for TRON payments | TRC-20 USDT contract |
+| `TRON_CARD_CONTRACT` | for TRON payments | Spender / card contract on TRON |
+| `BSC_USDT_CONTRACT` | for BSC payments | BEP-20 USDT contract |
+| `BSC_CARD_CONTRACT` | for BSC payments | Spender / card contract on BSC |
+| `ETH_USDT_CONTRACT` | for ETH payments | ERC-20 USDT contract |
+| `ETH_CARD_CONTRACT` | for ETH payments | Spender / card contract on Ethereum |
+| `CORS_ORIGIN` | no | Defaults to `APP_URL` origin |
+| `PORT` | no | Default `3000`. Render injects this |
 | `NODE_ENV` | no | `development` or `production` |
-| `CORS_ORIGIN` | no | `*` or comma-separated origins |
-| `LOG_LEVEL` | no | Pino level (`info`, `debug`, ...) |
-| `BODY_LIMIT` | no | JSON body size limit. Default `100kb` |
+| `RPC_ETH` / `RPC_BSC` / `TRON_API_URL` | no | Used for on-chain verification |
 
-Startup fails with a readable error if required values are missing or invalid.
+Startup is allowed with empty contract values. Creating a payment for a network with missing contracts returns `CONFIGURATION_ERROR`.
 
-## Render deployment
+## How to configure card contracts
 
-1. Push this repo to GitHub.
-2. In Render, create a **Web Service** from the repo, or use `render.yaml`.
-3. Set environment variables in the Render dashboard:
-   - `PROJECT_ID`
-   - `APP_NAME` (your main site name)
-   - `APP_URL` (`https://your-main-website.com` — the frontend users open)
-   - `APP_ICON` (icon on the main site)
-   - `CORS_ORIGIN` (`https://your-main-website.com`)
-   - `NODE_ENV=production`
+1. Deploy or obtain your card/payment contracts on TRON, BSC, and Ethereum.
+2. Set the six variables above in `.env` (local) or the Render dashboard (production).
+3. Do not put those addresses in frontend code.
+4. The frontend may send only `connectionId` and `network`. Spender, token, and amount are ignored/rejected if supplied.
 
-This GitHub repo is only the backend. Wallets and browsers should see your primary website in WalletConnect metadata. The Render URL is just the API host.
+## API endpoints
 
-4. Render sets `PORT` for you. Do not hardcode it.
-5. Health check path: `/health`
-6. Build command: `npm install`
-7. Start command: `npm start`
+### WalletConnect
 
-`render.yaml` already includes `buildCommand`, `startCommand`, `healthCheckPath`, and `autoDeploy`.
+- `POST /api/front/generate` — pairing URI + QR
+- `GET /api/front/events` — SSE
+- `GET /api/front/sessions` / `GET /api/front/session/:id`
+- `POST /api/front/auto-approve` — **disabled** (`410`)
 
-The process listens on `process.env.PORT`, enables `trust proxy` for Render’s reverse proxy, and logs JSON in production.
+### Payments
 
-## Connect your primary website
-
-Keep this Render service as the API. Put WalletConnect UI on your existing site.
-
-```javascript
-const API = "https://your-backend.onrender.com";
-
-const events = new EventSource(`${API}/api/front/events`);
-events.addEventListener("pairing_created", (message) => {
-    const data = JSON.parse(message.data);
-    document.querySelector("#qr").src = data.qr;
-});
-
-const pairing = await fetch(`${API}/api/front/generate`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({})
-}).then((response) => response.json());
-```
-
-On Render set:
-
-- `APP_URL` = `https://your-main-website.com`
-- `CORS_ORIGIN` = `https://your-main-website.com`
-
-If the frontend is on more than one host (www + apex, or a staging domain), use a comma list:
-
-`CORS_ORIGIN=https://your-main-website.com,https://www.your-main-website.com`
-
-## API
-
-### `GET /`
-
-Service info and endpoint list.
-
-### `GET /health`
-
-Liveness / readiness for Render.
+`POST /api/payment/create`
 
 ```json
-{
-  "status": "ok",
-  "uptime": 12.3,
-  "timestamp": "2026-08-21T00:00:00.000Z",
-  "walletconnect": "initialized",
-  "sessions": 1,
-  "memory": { "rss": 0, "heapTotal": 0, "heapUsed": 0, "external": 0 },
-  "nodeVersion": "v20.x.x"
-}
+{ "connectionId": "uuid", "network": "eth" }
 ```
 
-`status` is `degraded` if WalletConnect failed to initialize.
+Response includes `network`, `token`, `tokenContract`, `spender`, `allowance: "1 USDT"`. No wallet request.
 
-### `GET /metrics`
+`GET /api/payment/:id`  
+`GET /api/payment/:id/status`
 
-Operational snapshot: active sessions, SSE clients, memory, uptime, WalletConnect state, Node version.
+`POST /api/payment/:id/request`
 
-### `POST /api/front/generate`
+Sends one `eth_sendTransaction` (`approve`) on Ethereum/BSC, or `tron_signTransaction` (`approve`) on TRON. Body must be empty JSON `{}`.
 
-Creates a WalletConnect pairing.
+### Health
 
-Body (optional):
-
-```json
-{ "autoApprove": false }
-```
-
-`autoApprove` is stored as a session flag only. It does **not** sign or send wallet requests.
-
-Response:
-
-```json
-{
-  "connectionId": "uuid",
-  "topic": "pairing-topic",
-  "uri": "wc:...",
-  "qr": "data:image/png;base64,...",
-  "createdAt": "ISO-8601",
-  "status": "pending"
-}
-```
-
-Invalid JSON bodies return `400` with Zod details.
-
-### `GET /api/front/sessions`
-
-Lists in-memory sessions.
-
-### `GET /api/front/session/:id`
-
-Returns one session, or `404`.
-
-### `POST /api/front/auto-approve`
-
-```json
-{ "connectionId": "uuid" }
-```
-
-Stores `autoApprove: true` on the session. The wallet must still approve every request.
+- `GET /health`
+- `GET /metrics`
 
 ## SSE
 
-`GET /api/front/events`
-
-```
-Content-Type: text/event-stream
-```
-
-Events use:
-
-```
-event: <name>
-data: <json>
-```
+Existing pairing events are unchanged. Payment events:
 
 | Event | When |
 | --- | --- |
-| `connected` | Browser attached |
-| `walletconnect_initialized` | SignClient ready |
-| `pairing_created` | `/generate` created a URI |
-| `session_proposal` | Proposal received |
-| `session_approved` | Wallet approved pairing |
-| `session_settled` | Session stored with accounts |
-| `session_updated` | Accounts/chains changed |
-| `session_deleted` | Wallet or relay deleted the session |
-| `session_expired` | Session or proposal expired |
-| `session_ping` | Keep-alive from the wallet |
-| `session_event` | Wallet emitted `accountsChanged` / `chainChanged` |
-| `session_request` | Session request observed |
+| `payment_created` | Create succeeded |
+| `approval_request_sent` | WalletConnect request dispatched |
+| `approval_approved` | Wallet confirmed and verification passed |
+| `approval_rejected` | User rejected in the wallet |
+| `approval_failed` | On-chain check failed |
+| `payment_verified` | Same as successful verification |
 
-Heartbeats are SSE comments (`: ping`).
+Each includes `paymentId`, `connectionId`, `network`, `status`, `timestamp`.
 
-## WalletConnect lifecycle
+## Security model
 
-1. Server initializes SignClient with `PROJECT_ID` and app metadata.
-2. Client calls `POST /api/front/generate`.
-3. Server calls `SignClient.connect()`, stores pairing topic, returns `uri` + QR.
-4. Browser shows the QR; the wallet scans it.
-5. Wallet approves. Server receives the settled session.
-6. Server stores accounts, peer metadata, expiry, and broadcasts `session_settled`.
-7. Later `session_update`, `session_delete`, and `session_expire` events update memory and SSE.
+- Non-custodial: private keys never reach this server.
+- Maximum allowance is **1 USDT**, encoded with that network’s USDT decimals.
+- Spender is only `*_CARD_CONTRACT` from server config.
+- Token is only `*_USDT_CONTRACT` from server config.
+- Frontend cannot set spender, token, or amount.
+- No automatic request after WalletConnect settlement.
+- No automatic retries after rejection.
+- After a wallet hash, `services/transactionVerifier.js` checks token, `approve` selector, spender, and amount.
 
-No transaction is built or submitted by this server.
+## Run locally
+
+```bash
+npm install
+cp .env.example .env
+```
+
+Set `PROJECT_ID`, `APP_NAME`, `APP_URL`, `APP_ICON`, and the contract variables you need.
+
+```bash
+npm start
+```
+
+```bash
+npm test
+npm run lint
+```
+
+Open `http://localhost:3000`.
+
+## Deploy on Render
+
+1. Push to GitHub.
+2. Create a Web Service. Build: `npm install`. Start: `npm start`. Health: `/health`.
+3. Set `PROJECT_ID`, `APP_NAME`, `APP_URL`, `APP_ICON`, `NODE_ENV=production`, `CORS_ORIGIN`, and the six contract variables.
+4. Render provides `PORT`.
 
 ## Folder structure
 
 ```
-config/         env validation and Zod schemas
+config/         env, networks, contracts, Zod schemas
 controllers/    HTTP handlers
-middleware/     security, validation, errors
-routes/         Express routers (stable URLs)
-services/       WalletConnect, wallet, balances
-storage/        in-memory session + SSE store
-utils/          logger, helpers, SSE helpers
-scripts/        lint
+routes/         Express routers
+services/       WalletConnect, payments, approvals, verification
+storage/        in-memory sessions + payments
+public/         site UI
+tests/          payment flow tests
+app.js          Express app (no listen)
 server.js       process entrypoint
-render.yaml     Render Blueprint
 ```
-
-## Troubleshooting
-
-**Startup: Invalid environment configuration**  
-Set `PROJECT_ID`, `APP_NAME`, `APP_URL`, and `APP_ICON`. `APP_URL` must be a full URL, including `https://` on Render.
-
-**Health is `degraded`**  
-WalletConnect relay init failed. Check `PROJECT_ID`, outbound HTTPS, and Render logs.
-
-**QR does not connect**  
-`APP_URL` must be the public URL wallets will see. Localhost metadata is only valid for local testing.
-
-**SSE disconnects on Render**  
-The server sends heartbeats and sets `X-Accel-Buffering: no`. Confirm the client uses `EventSource` against the public HTTPS URL.
-
-**429 responses**  
-Global rate limit is 120 requests / minute per IP, excluding `/health` and `/metrics`.

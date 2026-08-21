@@ -3,6 +3,9 @@ const logger = require("./logger");
 
 /**
  * Broadcast a named SSE event to every connected browser.
+ * Payment events: payment_created, approval_request_sent, approval_approved,
+ * approval_rejected, approval_failed, payment_verified.
+ * Never include private keys or secrets in `data`.
  * @param {string} event
  * @param {object} [data]
  */

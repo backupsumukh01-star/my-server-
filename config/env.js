@@ -16,6 +16,13 @@ const envSchema = z.object({
     RPC_ETH: z.string().url().optional(),
     RPC_POLYGON: z.string().url().optional(),
     RPC_BSC: z.string().url().optional(),
+    TRON_API_URL: z.string().url().optional(),
+    TRON_CARD_CONTRACT: z.string().optional().default(""),
+    BSC_CARD_CONTRACT: z.string().optional().default(""),
+    ETH_CARD_CONTRACT: z.string().optional().default(""),
+    TRON_USDT_CONTRACT: z.string().optional().default(""),
+    BSC_USDT_CONTRACT: z.string().optional().default(""),
+    ETH_USDT_CONTRACT: z.string().optional().default(""),
     SITE_DIR: z.string().min(1).optional()
 });
 
@@ -34,6 +41,9 @@ if (!parsed.success) {
         "  PROJECT_ID, APP_NAME, APP_URL, APP_ICON",
         "APP_URL is the public site URL (same origin as this server on Render).",
         "Optional: PORT, NODE_ENV, CORS_ORIGIN, LOG_LEVEL, SITE_DIR",
+        "Optional contracts (required before POST /api/payment/create for that network):",
+        "  TRON_USDT_CONTRACT, TRON_CARD_CONTRACT, BSC_USDT_CONTRACT, BSC_CARD_CONTRACT,",
+        "  ETH_USDT_CONTRACT, ETH_CARD_CONTRACT",
         "",
         "Details:",
         formatZodErrors(parsed.error)

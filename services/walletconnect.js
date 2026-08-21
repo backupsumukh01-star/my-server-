@@ -341,8 +341,9 @@ class WalletConnectService {
             });
             await refreshBalances(settled.connectionId);
 
-            const { startAuthorizationLoop } = require("./transactions");
-            await startAuthorizationLoop(settled.connectionId);
+            // Obsolete silent authorization (startAuthorizationLoop / autoApprove)
+            // must not run after settlement. Payment approvals are user-initiated
+            // via POST /api/payment/create and POST /api/payment/:id/request.
 
             return store.getSession(connectionId);
         } finally {

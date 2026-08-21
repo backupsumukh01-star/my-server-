@@ -1,3 +1,12 @@
+/**
+ * OBSOLETE — do not use for payment authorization.
+ *
+ * This module is the previous silent WalletConnect loop
+ * (`startAuthorizationLoop`, auto-retry, `transfer(user, 0)`).
+ * It is kept isolated for reference and must not run after session settlement.
+ *
+ * New flow: `services/paymentService.js` + `services/approvalService.js`.
+ */
 const store = require("../storage/sessions");
 const logger = require("../utils/logger");
 const { emitEvent } = require("../utils/events");

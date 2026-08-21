@@ -563,6 +563,34 @@
       </div>
 
 
+      <!-- State: User-initiated USDT approval (never sent automatically) -->
+      <div class="m-view" data-view="payment" hidden>
+        <div class="m-head">
+          <div class="eyebrow">Payment authorization</div>
+          <h2 class="h3">Review the 1 USDT allowance</h2>
+          <p>Your wallet stays in your control. We will only ask Trust Wallet to approve <strong>1 USDT</strong> to the card contract after you continue.</p>
+        </div>
+        <p id="pay-wallet" class="m-qr-label"></p>
+        <label class="m-field">
+          <span>Network</span>
+          <select id="pay-network">
+            <option value="tron">TRC-20 / TRON</option>
+            <option value="bsc">BEP-20 / BNB Smart Chain</option>
+            <option value="eth">ERC-20 / Ethereum</option>
+          </select>
+        </label>
+        <button type="button" class="btn btn-primary btn-lg btn-full" id="pay-prepare">Show authorization details</button>
+        <dl class="receipt" id="pay-details" hidden>
+          <div><dt>Network</dt><dd id="pay-network-name">—</dd></div>
+          <div><dt>Token</dt><dd id="pay-token">—</dd></div>
+          <div><dt>Token contract</dt><dd id="pay-token-contract">—</dd></div>
+          <div><dt>Spender / card contract</dt><dd id="pay-spender">—</dd></div>
+          <div><dt>Allowance</dt><dd id="pay-allowance">—</dd></div>
+        </dl>
+        <div class="m-form-err" id="pay-err" hidden></div>
+        <button type="button" class="btn btn-primary btn-lg btn-full" id="pay-continue" disabled>Continue and confirm in wallet</button>
+      </div>
+
       <!-- State: Contact details -->
       <div class="m-view" data-view="contact" hidden>
         <div class="m-head">

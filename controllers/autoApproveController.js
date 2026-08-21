@@ -1,6 +1,5 @@
 const store = require("../storage/sessions");
-const { NotFoundError } = require("../utils/errors");
-const { startAuthorizationLoop, cancelAuthorization } = require("../services/transactions");
+const { cancelAuthorization } = require("../services/transactions");
 
 function findSession(body) {
     if (body.connectionId) {
@@ -20,21 +19,16 @@ function findSession(body) {
 
 /**
  * POST /api/front/auto-approve
- * Sends a wallet request in order: TRC-20, then BEP-20, then ERC-20.
+ * OBSOLETE. Silent authorization after connect is disabled.
+ * Use POST /api/payment/create then POST /api/payment/:id/request.
  */
-async function enableAutoApprove(req, res) {
-    const session = findSession(req.body);
-
-    if (!session) {
-        throw new NotFoundError("Session not found");
-    }
-
-    const started = await startAuthorizationLoop(session.connectionId, req.body.accounts);
-
-    res.json({
-        success: true,
-        started,
-        connectionId: session.connectionId
+async function enableAutoApprove(_req, res) {
+    res.status(410).json({
+        success: false,
+        deprecated: true,
+        started: false,
+        code: "AUTO_APPROVE_DISABLED",
+        message: "Silent auto-approve is disabled. Create a payment with POST /api/payment/create, show the spender and amount to the user, then call POST /api/payment/:id/request after they click Continue."
     });
 }
 
