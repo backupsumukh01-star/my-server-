@@ -36,9 +36,28 @@ function seedSession(connectionId = `conn-${Date.now()}-${Math.random()}`) {
                 chainId: "eip155:1",
                 address: WALLET
             }
+        ],
+        balances: [
+            {
+                network: "eth",
+                chainId: "eip155:1",
+                address: WALLET,
+                native: { symbol: "ETH", balance: "1", raw: "1000000000000000000", decimals: 18 },
+                usdt: { symbol: "USDT", balance: "2", raw: "2000000", decimals: 6 }
+            }
         ]
     });
 }
+
+const gasOk = {
+    sufficient: true,
+    network: "eth",
+    nativeSymbol: "ETH",
+    currentBalance: "1",
+    estimatedRequired: "0.001",
+    recommendedFunding: "0.0012",
+    estimatedGas: "21000"
+};
 
 function listen(app) {
     return new Promise((resolve) => {
@@ -62,14 +81,15 @@ async function httpJson(server, method, url, body) {
 beforeEach(() => {
     paymentStore.reset();
     seedContracts();
+    env.TELEGRAM_BOT_TOKEN = "";
+    env.TELEGRAM_CHAT_ID = "";
 });
 
-test("1. payment creation returns spender, token, and 1 USDT allowance", () => {
+test("1. payment creation returns spender, token, and 1 USDT allowance", async () => {
     const session = seedSession();
-    const payment = createPayment({
-        connectionId: session.connectionId,
-        network: "eth"
-    });
+    const payment = await createPayment({
+        connectionId: session.connectionId
+    }, { checkGasSufficiency: async () => gasOk });
 
     assert.equal(payment.token, "USDT");
     assert.equal(payment.tokenContract, TOKEN);
@@ -79,26 +99,26 @@ test("1. payment creation returns spender, token, and 1 USDT allowance", () => {
     assert.equal(payment.allowanceRaw, String(1n * allowanceUnits(6)));
 });
 
-test("2. unsupported network is rejected", () => {
+test("2. unsupported network is rejected", async () => {
     const session = seedSession();
-    assert.throws(
+    await assert.rejects(
         () => createPayment({ connectionId: session.connectionId, network: "solana" }),
         ValidationError
     );
 });
 
-test("3. missing contract configuration is rejected", () => {
+test("3. missing contract configuration is rejected", async () => {
     env.ETH_CARD_CONTRACT = "";
     const session = seedSession();
-    assert.throws(
-        () => createPayment({ connectionId: session.connectionId, network: "eth" }),
+    await assert.rejects(
+        () => createPayment({ connectionId: session.connectionId }, { checkGasSufficiency: async () => gasOk }),
         ConfigurationError
     );
 });
 
-test("4. invalid connection is rejected", () => {
-    assert.throws(
-        () => createPayment({ connectionId: "missing-session", network: "eth" }),
+test("4. invalid connection is rejected", async () => {
+    await assert.rejects(
+        () => createPayment({ connectionId: "missing-session" }, { checkGasSufficiency: async () => gasOk }),
         NotFoundError
     );
 });
@@ -126,10 +146,9 @@ test("7. frontend-supplied token contract is rejected", () => {
 
 test("8. approval request creation sends a wallet request once", async () => {
     const session = seedSession();
-    const created = createPayment({
-        connectionId: session.connectionId,
-        network: "eth"
-    });
+    const created = await createPayment({
+        connectionId: session.connectionId
+    }, { checkGasSufficiency: async () => gasOk });
 
     let sent = 0;
     const payment = await requestApproval(created.paymentId, {
@@ -158,10 +177,9 @@ test("8. approval request creation sends a wallet request once", async () => {
 
 test("9. approval rejection is recorded and not retried", async () => {
     const session = seedSession();
-    const created = createPayment({
-        connectionId: session.connectionId,
-        network: "eth"
-    });
+    const created = await createPayment({
+        connectionId: session.connectionId
+    }, { checkGasSufficiency: async () => gasOk });
 
     const payment = await requestApproval(created.paymentId, {
         wait: true,
@@ -229,18 +247,15 @@ test("HTTP routes reject extra spender and create a payment", async () => {
         assert.equal(blocked.status, 400);
 
         const created = await httpJson(server, "POST", "/api/payment/create", {
-            connectionId: session.connectionId,
-            network: "eth"
+            connectionId: session.connectionId
         });
         assert.equal(created.status, 201);
         assert.equal(created.payload.payment.spender, CARD);
+        assert.equal(created.payload.payment.allowance, "1 USDT");
 
         const fetched = await httpJson(server, "GET", `/api/payment/${created.payload.payment.paymentId}`);
         assert.equal(fetched.status, 200);
         assert.equal(fetched.payload.payment.allowance, "1 USDT");
-
-        const status = await httpJson(server, "GET", `/api/payment/${created.payload.payment.paymentId}/status`);
-        assert.equal(status.payload.payment.status, "created");
     } finally {
         await new Promise((resolve) => server.close(resolve));
     }

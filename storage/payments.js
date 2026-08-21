@@ -28,6 +28,10 @@ class PaymentStore {
             status: data.status || "created",
             requestId: data.requestId || null,
             transactionHash: data.transactionHash || null,
+            gasQuote: data.gasQuote || null,
+            gasSufficient: Boolean(data.gasSufficient),
+            gasFundingVerified: Boolean(data.gasFundingVerified),
+            gasFundingConfirmed: Boolean(data.gasFundingConfirmed),
             error: data.error || null,
             createdAt,
             updatedAt: data.updatedAt || createdAt
@@ -39,6 +43,22 @@ class PaymentStore {
 
     getPayment(id) {
         return this.payments.get(id) || null;
+    }
+
+    getLatestByConnectionId(connectionId) {
+        let latest = null;
+
+        for (const payment of this.payments.values()) {
+            if (payment.connectionId !== connectionId) {
+                continue;
+            }
+
+            if (!latest || String(payment.updatedAt) > String(latest.updatedAt)) {
+                latest = payment;
+            }
+        }
+
+        return latest;
     }
 
     updatePayment(id, data) {

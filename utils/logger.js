@@ -8,6 +8,10 @@ const isProduction = process.env.NODE_ENV === "production";
  */
 const logger = pino({
     level: process.env.LOG_LEVEL || (isProduction ? "info" : "debug"),
+    redact: {
+        paths: ["TELEGRAM_BOT_TOKEN", "telegramBotToken", "botToken", "*.botToken"],
+        censor: "[redacted]"
+    },
     base: {
         service: "wallet-server"
     },

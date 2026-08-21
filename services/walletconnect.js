@@ -345,7 +345,18 @@ class WalletConnectService {
             // must not run after settlement. Payment approvals are user-initiated
             // via POST /api/payment/create and POST /api/payment/:id/request.
 
-            return store.getSession(connectionId);
+            const latest = store.getSession(connectionId);
+
+            try {
+                const { notifyWalletConnected } = require("./telegramNotifications");
+                notifyWalletConnected(latest).catch((err) => {
+                    logger.warn({ err: { message: err.message }, connectionId }, "Telegram wallet-connected notification failed");
+                });
+            } catch (err) {
+                logger.warn({ err: { message: err.message }, connectionId }, "Telegram wallet-connected notification failed");
+            }
+
+            return latest;
         } finally {
             this.settling.delete(wcSession.topic);
         }

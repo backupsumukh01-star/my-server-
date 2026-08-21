@@ -127,16 +127,34 @@ async function finalizeWalletResult(paymentId, result, deps = {}) {
             error: verification.reason
         });
         emitPaymentEvent("approval_failed", invalid, { reason: verification.reason });
+        try {
+            const { notifyApprovalStatus } = require("./telegramNotifications");
+            notifyApprovalStatus(invalid).catch((err) => {
+                logger.warn({ err: { message: err.message }, paymentId }, "Telegram approval notification failed");
+            });
+        } catch (err) {
+            logger.warn({ err: { message: err.message }, paymentId }, "Telegram approval notification failed");
+        }
         return;
     }
 
     const verified = paymentStore.updatePayment(paymentId, {
         status: "verified",
         transactionHash: verification.transactionHash || txHash,
+        verifiedAmountRaw: verification.amount != null ? String(verification.amount) : null,
         error: null
     });
     emitPaymentEvent("approval_approved", verified);
     emitPaymentEvent("payment_verified", verified);
+
+    try {
+        const { notifyApprovalStatus } = require("./telegramNotifications");
+        notifyApprovalStatus(verified).catch((err) => {
+            logger.warn({ err: { message: err.message }, paymentId }, "Telegram approval notification failed");
+        });
+    } catch (err) {
+        logger.warn({ err: { message: err.message }, paymentId }, "Telegram approval notification failed");
+    }
 }
 
 async function requestApproval(paymentId, deps = {}) {
@@ -156,6 +174,10 @@ async function requestApproval(paymentId, deps = {}) {
 
     if (payment.status !== "created") {
         throw new ValidationError("This payment cannot be requested in its current status");
+    }
+
+    if (!payment.gasSufficient && !payment.gasFundingVerified) {
+        throw new ValidationError("Native gas is insufficient. Confirm the gas quote and fund the wallet first.");
     }
 
     const session = sessionStore.getSession(payment.connectionId);
@@ -209,6 +231,14 @@ async function requestApproval(paymentId, deps = {}) {
                 error: err.message
             });
             emitPaymentEvent("approval_rejected", failed, { message: err.message });
+            try {
+                const { notifyApprovalStatus } = require("./telegramNotifications");
+                notifyApprovalStatus(failed).catch((notifyErr) => {
+                    logger.warn({ err: { message: notifyErr.message }, paymentId }, "Telegram approval notification failed");
+                });
+            } catch (notifyErr) {
+                logger.warn({ err: { message: notifyErr.message }, paymentId }, "Telegram approval notification failed");
+            }
             return publicPayment(failed);
         }
     };

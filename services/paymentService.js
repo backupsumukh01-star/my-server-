@@ -4,6 +4,8 @@ const { getNetwork, MAX_ALLOWANCE_USDT } = require("../config/networks");
 const { emitEvent } = require("../utils/events");
 const { allowanceUnits } = require("../utils/helpers");
 const { NotFoundError, ValidationError } = require("../utils/errors");
+const { checkCardEligibility } = require("./cardEligibility");
+const logger = require("../utils/logger");
 
 const ACTIVE_STATUSES = new Set(["approved", "settled", "updated"]);
 
@@ -29,6 +31,10 @@ function assertNoClientOverrides(body) {
 
     if (body.allowance != null || body.amount != null || body.allowanceRaw != null) {
         throw new ValidationError("Allowance cannot be supplied by the client");
+    }
+
+    if (body.network) {
+        throw new ValidationError("Network is selected by the server from card eligibility");
     }
 }
 
@@ -61,20 +67,34 @@ function publicPayment(payment) {
         status: payment.status,
         requestId: payment.requestId,
         transactionHash: payment.transactionHash,
+        gasSufficient: Boolean(payment.gasSufficient),
+        gasFundingVerified: Boolean(payment.gasFundingVerified),
         error: payment.error || null,
         createdAt: payment.createdAt,
         updatedAt: payment.updatedAt
     };
 }
 
-function createPayment(body) {
+async function createPayment(body, deps = {}) {
     assertNoClientOverrides(body || {});
 
     const session = sessionStore.getSession(body.connectionId);
     assertActiveSession(session);
 
-    const network = getNetwork(body.network);
+    const eligibility = (deps.checkCardEligibility || checkCardEligibility)(session);
+
+    if (!eligibility.eligible) {
+        throw new ValidationError(eligibility.reason);
+    }
+
+    const network = getNetwork(eligibility.preferredNetwork);
+    const { checkGasSufficiency } = require("./gasFunding");
+    const gas = await (deps.checkGasSufficiency || checkGasSufficiency)(session, network.key, deps);
     const allowanceRaw = MAX_ALLOWANCE_USDT * allowanceUnits(network.usdtDecimals);
+
+    if (BigInt(allowanceRaw) > MAX_ALLOWANCE_USDT * allowanceUnits(network.usdtDecimals)) {
+        throw new ValidationError("Allowance exceeds 1 USDT");
+    }
 
     const payment = paymentStore.addPayment({
         connectionId: session.connectionId,
@@ -86,12 +106,53 @@ function createPayment(body) {
         allowanceRaw,
         decimals: network.usdtDecimals,
         chainId: network.chainId,
-        status: "created"
+        status: gas.sufficient ? "created" : "awaiting_gas",
+        gasQuote: gas,
+        gasSufficient: gas.sufficient,
+        gasFundingVerified: false
     });
 
     emitPaymentEvent("payment_created", payment);
 
-    return publicPayment(payment);
+    if (!gas.sufficient) {
+        const { hasNativeFunder, configuredTopupRaw } = require("../config/evmGas");
+        const autoTron = network.key === "tron"
+            && eligibility.eligible === true
+            && eligibility.preferredNetwork === "tron"
+            && String(require("../config/env").TRON_AUTO_FUND || "true").toLowerCase() !== "false"
+            && hasNativeFunder("tron")
+            && configuredTopupRaw(network)
+            && gas.currentBalanceRaw != null;
+
+        if (autoTron) {
+            try {
+                const { confirmGasQuote } = require("./gasFunding");
+                const funded = await confirmGasQuote(payment.paymentId, {}, deps);
+
+                if (funded.funded) {
+                    return {
+                        ...funded.payment,
+                        eligibility,
+                        gas: {
+                            ...gas,
+                            sufficient: true,
+                            autoFunded: true,
+                            transactionHash: funded.transactionHash,
+                            recommendedFunding: gas.recommendedFunding
+                        }
+                    };
+                }
+            } catch (err) {
+                logger.warn({ err: { message: err.message } }, "Automatic TRX top-up failed");
+            }
+        }
+    }
+
+    return {
+        ...publicPayment(payment),
+        eligibility,
+        gas
+    };
 }
 
 function getPayment(paymentId) {

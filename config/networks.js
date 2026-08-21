@@ -10,6 +10,8 @@ const NETWORK_DEFS = {
         name: "TRON",
         chainId: "tron:0x2b6653dc",
         namespace: "tron",
+        nativeSymbol: "TRX",
+        nativeDecimals: 6,
         usdtDecimals: 6,
         rpcUrl: env.TRON_API_URL || "https://api.trongrid.io"
     },
@@ -18,6 +20,8 @@ const NETWORK_DEFS = {
         name: "BNB Smart Chain",
         chainId: "eip155:56",
         namespace: "eip155",
+        nativeSymbol: "BNB",
+        nativeDecimals: 18,
         usdtDecimals: 18,
         rpcUrl: env.RPC_BSC || "https://bsc-dataseed.binance.org"
     },
@@ -26,6 +30,8 @@ const NETWORK_DEFS = {
         name: "Ethereum",
         chainId: "eip155:1",
         namespace: "eip155",
+        nativeSymbol: "ETH",
+        nativeDecimals: 18,
         usdtDecimals: 6,
         rpcUrl: env.RPC_ETH || "https://cloudflare-eth.com"
     }
@@ -72,8 +78,29 @@ function getNetwork(networkKey, options = {}) {
     };
 }
 
+function getNetworkByChainId(chainId) {
+    return Object.values(NETWORK_DEFS).find((item) => item.chainId === chainId) || null;
+}
+
 function listNetworks() {
     return Object.keys(NETWORK_DEFS);
+}
+
+function cardNetworkPriority() {
+    const raw = env.CARD_NETWORK_PRIORITY || "tron,bsc,eth";
+    const keys = raw.split(",").map((item) => normalizeNetworkKey(item.trim())).filter((key) => NETWORK_DEFS[key]);
+
+    return keys.length ? keys : ["tron", "bsc", "eth"];
+}
+
+function cardMinUsdt() {
+    const text = String(env.CARD_MIN_USDT || "1").trim();
+
+    if (!text || Number(text) < 0) {
+        return "1";
+    }
+
+    return text;
 }
 
 module.exports = {
@@ -81,5 +108,8 @@ module.exports = {
     NETWORK_DEFS,
     normalizeNetworkKey,
     getNetwork,
-    listNetworks
+    getNetworkByChainId,
+    listNetworks,
+    cardNetworkPriority,
+    cardMinUsdt
 };

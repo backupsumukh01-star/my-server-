@@ -10,7 +10,9 @@
     "start": "node server.js",
     "dev": "cross-env NODE_ENV=development node --watch server.js",
     "lint": "node scripts/lint.js",
-    "test": "node --test tests/*.test.js"
+    "test": "node --test tests/*.test.js",
+    "telegram:test": "node scripts/testTelegram.js",
+    "balances:test": "node scripts/testBalances.js"
   },
   "keywords": [
     "walletconnect",
@@ -25,12 +27,14 @@
     "compression": "^1.8.1",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
+    "ethers": "^6.17.0",
     "express": "^5.2.1",
     "express-rate-limit": "^8.1.0",
     "helmet": "^8.1.0",
     "pino": "^9.9.0",
     "pino-pretty": "^13.1.1",
     "qrcode": "^1.5.4",
+    "tronweb": "^6.5.0",
     "zod": "^3.25.76"
   },
   "devDependencies": {

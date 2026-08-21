@@ -90,7 +90,9 @@ async function verifyEvmTransaction(payment, txHash, rpc = jsonRpc) {
 
     return {
         valid: true,
-        transactionHash: txHash
+        transactionHash: txHash,
+        amount: decoded.amount,
+        spender: decoded.spender
     };
 }
 
@@ -166,7 +168,9 @@ async function verifyTronTransaction(payment, txHash, fetcher = fetch) {
 
     return {
         valid: true,
-        transactionHash: txHash
+        transactionHash: txHash,
+        amount: decoded.amount,
+        spender: decoded.spender
     };
 }
 

@@ -34,11 +34,18 @@ const paymentIdParamsSchema = z.object({
 });
 
 const createPaymentBodySchema = z.object({
-    connectionId: z.string().min(1, "connectionId is required"),
-    network: z.string().min(1, "network is required")
+    connectionId: z.string().min(1, "connectionId is required")
 }).strict();
 
 const requestPaymentBodySchema = z.object({}).strict();
+
+const gasQuoteBodySchema = z.object({}).strict();
+
+const gasConfirmBodySchema = z.object({}).strict();
+
+const gasVerifyBodySchema = z.object({
+    transactionHash: z.string().min(1).optional()
+}).strict();
 
 module.exports = {
     generateBodySchema,
@@ -48,5 +55,8 @@ module.exports = {
     sessionParamsSchema,
     paymentIdParamsSchema,
     createPaymentBodySchema,
-    requestPaymentBodySchema
+    requestPaymentBodySchema,
+    gasQuoteBodySchema,
+    gasConfirmBodySchema,
+    gasVerifyBodySchema
 };

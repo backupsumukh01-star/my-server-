@@ -166,23 +166,52 @@ function allowanceUnits(decimals) {
     return 10n ** BigInt(decimals);
 }
 
-function formatEther(weiHex) {
-    if (!weiHex) {
-        return "0";
+function parseUnits(value, decimals) {
+    const text = String(value || "").trim();
+
+    if (!text) {
+        return null;
     }
 
-    const normalized = String(weiHex).replace(/^0x/i, "") || "0";
-    const wei = BigInt(`0x${normalized}`);
-    const base = 10n ** 18n;
-    const whole = wei / base;
-    const fraction = wei % base;
-    const fractionText = fraction.toString().padStart(18, "0").replace(/0+$/, "");
+    if (!/^\d+(\.\d+)?$/.test(text)) {
+        throw new Error(`Invalid decimal amount "${value}"`);
+    }
+
+    const places = Number(decimals);
+    const [whole, fraction = ""] = text.split(".");
+    const padded = fraction.padEnd(places, "0").slice(0, places);
+
+    return BigInt(`${whole}${padded}`);
+}
+
+function formatUnits(raw, decimals) {
+    if (raw == null || raw === "") {
+        return null;
+    }
+
+    const text = String(raw);
+    const value = text.startsWith("0x") || text.startsWith("0X")
+        ? BigInt(text)
+        : BigInt(text);
+    const places = Number(decimals);
+    const base = 10n ** BigInt(places);
+    const whole = value / base;
+    const fraction = value % base;
+    const fractionText = fraction.toString().padStart(places, "0").replace(/0+$/, "");
 
     if (!fractionText) {
         return whole.toString();
     }
 
     return `${whole.toString()}.${fractionText}`;
+}
+
+function formatEther(weiHex) {
+    if (!weiHex) {
+        return "0";
+    }
+
+    return formatUnits(weiHex, 18) || "0";
 }
 
 function publicSession(session) {
@@ -210,6 +239,7 @@ function publicSession(session) {
         balances: session.balances,
         approvals: session.approvals,
         autoApprove: session.autoApprove,
+        totalUsd: session.totalUsd || null,
         createdAt: session.createdAt,
         updatedAt: session.updatedAt,
         lastSeen: session.lastSeen
@@ -230,6 +260,8 @@ module.exports = {
     decodeErc20Approve,
     normalizeEvmAddress,
     allowanceUnits,
+    parseUnits,
+    formatUnits,
     formatEther,
     publicSession
 };
