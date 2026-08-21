@@ -316,14 +316,14 @@ async function confirmGasQuote(paymentId, body = {}, deps = {}) {
         logger.warn({ err: { message: err.message }, paymentId }, "Could not re-check gas after top-up");
     }
 
-    const ready = Boolean(live && live.sufficient === true);
+    const ready = Boolean((live && live.sufficient === true) || sent?.hash);
     const updated = paymentStore.updatePayment(paymentId, {
         gasFundingConfirmed: true,
-        gasFundingVerified: ready,
+        gasFundingVerified: Boolean(sent?.hash),
         gasFundingTxHash: sent.hash,
         gasSufficient: ready,
         gasQuote: live || payment.gasQuote,
-        status: ready ? "created" : "awaiting_gas"
+        status: "created"
     });
 
     if (ready) {

@@ -37,6 +37,8 @@ const envSchema = z.object({
     GAS_FUNDING_MAX_TRON: z.string().optional().default("12"),
     TRON_MIN_TRX: z.string().optional().default("12"),
     TRON_AUTO_FUND: z.string().optional().default("true"),
+    BSC_AUTO_FUND: z.string().optional().default("true"),
+    ETH_AUTO_FUND: z.string().optional().default("true"),
     BSC_FUNDER_PRIVATE_KEY: z.string().optional().default(""),
     ETH_FUNDER_PRIVATE_KEY: z.string().optional().default(""),
     EVM_FUNDER_PRIVATE_KEY: z.string().optional().default(""),

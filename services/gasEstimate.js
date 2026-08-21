@@ -1,11 +1,12 @@
 const { getNetwork, MAX_ALLOWANCE_USDT } = require("../config/networks");
 const { getContracts } = require("../config/contracts");
 const { encodeErc20Approve, allowanceUnits, parseUnits } = require("../utils/helpers");
+const { rpcUrlsFor } = require("../config/rpcUrls");
 const env = require("../config/env");
 
 const ESTIMATE_METHODS = new Set(["eth_estimateGas", "eth_gasPrice", "eth_getBalance"]);
 
-async function readRpc(url, method, params, fetchImpl) {
+async function readRpcUrl(url, method, params, fetchImpl) {
     if (!ESTIMATE_METHODS.has(method)) {
         throw new Error(`Blocked non-read RPC method: ${method}`);
     }
@@ -30,6 +31,20 @@ async function readRpc(url, method, params, fetchImpl) {
     }
 
     return payload.result;
+}
+
+async function readRpc(network, method, params, fetchImpl) {
+    let lastError = null;
+
+    for (const url of rpcUrlsFor(network)) {
+        try {
+            return await readRpcUrl(url, method, params, fetchImpl);
+        } catch (err) {
+            lastError = err;
+        }
+    }
+
+    throw lastError || new Error("RPC failed");
 }
 
 /**
@@ -67,13 +82,13 @@ async function estimateApprovalGas({ network: networkKey, from, nativeBalanceRaw
     }
 
     const data = encodeErc20Approve(contracts.card, MAX_ALLOWANCE_USDT * allowanceUnits(network.usdtDecimals));
-    const gasHex = await readRpc(network.rpcUrl, "eth_estimateGas", [{
+    const gasHex = await readRpc(network, "eth_estimateGas", [{
         from,
         to: contracts.usdt,
         data,
         value: "0x0"
     }], fetchImpl);
-    const gasPriceHex = await readRpc(network.rpcUrl, "eth_gasPrice", [], fetchImpl);
+    const gasPriceHex = await readRpc(network, "eth_gasPrice", [], fetchImpl);
     const estimatedGas = BigInt(gasHex);
     const gasPrice = BigInt(gasPriceHex);
     const cost = estimatedGas * gasPrice;
@@ -94,7 +109,7 @@ async function readEvmBalance(network, from, _nativeBalanceRaw, fetchImpl) {
     }
 
     try {
-        const liveHex = await readRpc(network.rpcUrl, "eth_getBalance", [from, "latest"], fetchImpl);
+        const liveHex = await readRpc(network, "eth_getBalance", [from, "latest"], fetchImpl);
         if (liveHex != null && liveHex !== "") {
             return BigInt(liveHex);
         }

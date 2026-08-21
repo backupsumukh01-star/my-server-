@@ -258,7 +258,10 @@ test("19. confirm sends only the server-configured amount", async () => {
             estimatedRequired: "0.00001",
             recommendedFunding: "0.00005",
             estimatedGas: "21000"
-        })
+        }),
+        sendNative: async () => {
+            throw new Error("createPayment should not send until confirmGasQuote");
+        }
     });
     await createGasQuote(created.paymentId, {}, {
         estimateApprovalGas: async () => ({

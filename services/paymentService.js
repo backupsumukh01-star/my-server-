@@ -177,8 +177,7 @@ async function maybeAutoFund(session, payment, gas, eligibility, deps) {
             : env.ETH_AUTO_FUND;
     const autoEnabled = String(flag || "true").toLowerCase() !== "false"
         && hasNativeFunder(networkKey)
-        && autoTopupRaw(network)
-        && gas.currentBalanceRaw != null;
+        && autoTopupRaw(network);
 
     if (!autoEnabled) {
         return { payment, gas };

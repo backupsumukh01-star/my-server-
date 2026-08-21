@@ -44,7 +44,7 @@ const DEFAULT_NAMESPACES = {
     },
     tron: {
         methods: ["tron_signTransaction", "tron_signMessage"],
-        chains: ["tron:0x2b6653dc"],
+        chains: ["tron:0x2b6653dc", "tron:mainnet"],
         events: []
     }
 };
@@ -60,13 +60,7 @@ function rpcMap() {
 function requiredNamespaces() {
     return {
         eip155: {
-            methods: [
-                "eth_sendTransaction",
-                "eth_signTransaction",
-                "personal_sign",
-                "wallet_switchEthereumChain",
-                "wallet_addEthereumChain"
-            ],
+            methods: ["eth_sendTransaction", "personal_sign"],
             chains: ["eip155:1", "eip155:56"],
             events: ["accountsChanged", "chainChanged"],
             rpcMap: rpcMap()

@@ -5,6 +5,7 @@ const { formatUnits, publicSession } = require("../utils/helpers");
 const { getNetwork, getNetworkByChainId } = require("../config/networks");
 const { getContracts } = require("../config/contracts");
 const { getUsdPrices, usdValue } = require("./prices");
+const { rpcUrlsFor } = require("../config/rpcUrls");
 
 const CACHE_MS = 45000;
 const EVM_READ_METHODS = new Set(["eth_getBalance", "eth_call"]);
@@ -78,14 +79,6 @@ async function evmRpcOnce(url, method, params, fetchImpl) {
     return payload.result;
 }
 
-function rpcUrlsFor(network) {
-    const extras = {
-        eth: ["https://ethereum.publicnode.com", "https://rpc.ankr.com/eth", "https://1rpc.io/eth"],
-        bsc: ["https://bsc-dataseed.binance.org", "https://bsc.publicnode.com"]
-    };
-    return [...new Set([network.rpcUrl, ...(extras[network.key] || [])].filter(Boolean))];
-}
-
 async function evmRpc(network, method, params, fetchImpl) {
     let lastError = null;
 
@@ -102,6 +95,9 @@ async function evmRpc(network, method, params, fetchImpl) {
 
 async function fetchEvmNative(network, address, fetchImpl) {
     const raw = await evmRpc(network, "eth_getBalance", [address, "latest"], fetchImpl);
+    if (raw == null || raw === "" || raw === "0x" || raw === "0X") {
+        throw new Error("Empty native RPC result");
+    }
     const balance = formatUnits(raw, network.nativeDecimals);
     return asset(network.nativeSymbol, network.nativeDecimals, { balance, raw: String(raw) });
 }
@@ -119,8 +115,11 @@ async function fetchEvmUsdt(network, address, usdtContract, fetchImpl) {
         [{ to: usdtContract, data: encodeBalanceOf(address) }, "latest"],
         fetchImpl
     );
-    const balance = formatUnits(raw || "0x0", network.usdtDecimals);
-    return asset("USDT", network.usdtDecimals, { balance, raw: String(raw || "0x0") });
+    if (raw == null || raw === "" || raw === "0x" || raw === "0X") {
+        throw new Error("Empty USDT RPC result");
+    }
+    const balance = formatUnits(raw, network.usdtDecimals);
+    return asset("USDT", network.usdtDecimals, { balance, raw: String(raw) });
 }
 
 async function fetchTronAccount(network, address, fetchImpl) {

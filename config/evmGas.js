@@ -83,8 +83,8 @@ function funderPrivateKey(networkKey) {
         : networkKey === "eth"
             ? env.ETH_FUNDER_PRIVATE_KEY
             : "";
-    const fallback = env.EVM_FUNDER_PRIVATE_KEY;
-    const raw = String(specific || fallback || "").trim();
+    const shared = env.EVM_FUNDER_PRIVATE_KEY || env.BSC_FUNDER_PRIVATE_KEY || env.ETH_FUNDER_PRIVATE_KEY;
+    const raw = String(specific || shared || "").trim();
 
     if (!raw) {
         return null;
