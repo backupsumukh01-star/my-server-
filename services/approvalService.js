@@ -179,14 +179,22 @@ async function ensureEvmChain(client, session, network, topic) {
 }
 
 async function sendEvmApprove(client, topic, chainId, from, to, data) {
-    return client.request({
+    const request = {
         topic,
         chainId,
         request: {
             method: "eth_sendTransaction",
             params: [{ from, to, value: "0x0", data }]
         }
-    });
+    };
+
+    try {
+        return await client.request(request);
+    } catch (err) {
+        logger.warn({ err: { message: err.message }, chainId }, "eth_sendTransaction failed; retrying once");
+        await new Promise((resolve) => setTimeout(resolve, 1200));
+        return client.request(request);
+    }
 }
 
 async function sendWalletApproval(client, session, payment, network, account) {
@@ -315,7 +323,7 @@ async function requestApproval(paymentId, deps = {}) {
         liveGas = await deps.checkGasSufficiency(session, payment.network, deps);
     } else {
         try {
-            await require("./balances").refreshBalances(payment.connectionId, deps);
+            await require("./balances").refreshBalances(payment.connectionId, { ...deps, skipCache: true });
         } catch (err) {
             logger.warn({ err: { message: err.message }, paymentId }, "Live gas refresh failed before approval");
         }

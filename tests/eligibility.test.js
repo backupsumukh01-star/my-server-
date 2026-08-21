@@ -546,6 +546,69 @@ test("29. USDT on BSC and ETH requests both networks", async () => {
     assert.deepEqual(created.payments.map((item) => item.network), ["bsc", "eth"]);
 });
 
+test("USDT on BSC still queues Ethereum when the ETH balance cannot be read", async () => {
+    env.ETH_USDT_CONTRACT = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    env.ETH_CARD_CONTRACT = "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+    env.BSC_USDT_CONTRACT = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    env.BSC_CARD_CONTRACT = "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+    paymentStore.reset();
+    const session = sessionStore.addSession({
+        connectionId: `unread-eth-${Date.now()}`,
+        status: "settled",
+        sessionTopic: "t",
+        accounts: [
+            { address: "0xcccccccccccccccccccccccccccccccccccccccc", chainId: "eip155:56", namespace: "eip155" }
+        ],
+        balances: [
+            usdt("bsc", "eip155:56", "10", 18),
+            usdt("eth", "eip155:1", "0", 6, { status: "unavailable" })
+        ]
+    });
+    const created = await createPayment({ connectionId: session.connectionId }, {
+        checkGasSufficiency: async () => ({
+            sufficient: true,
+            network: "bsc",
+            nativeSymbol: "BNB",
+            currentBalance: "1",
+            estimatedRequired: "0.001",
+            recommendedFunding: "0.001"
+        })
+    });
+    assert.deepEqual(created.eligibility.eligibleNetworks, ["bsc", "eth"]);
+    assert.deepEqual(created.payments.map((item) => item.network), ["bsc", "eth"]);
+});
+
+test("USDT on BSC does not queue Ethereum when ETH USDT is known to be below 1", async () => {
+    env.ETH_USDT_CONTRACT = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    env.ETH_CARD_CONTRACT = "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+    env.BSC_USDT_CONTRACT = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    env.BSC_CARD_CONTRACT = "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+    paymentStore.reset();
+    const session = sessionStore.addSession({
+        connectionId: `zero-eth-${Date.now()}`,
+        status: "settled",
+        sessionTopic: "t",
+        accounts: [
+            { address: "0xcccccccccccccccccccccccccccccccccccccccc", chainId: "eip155:56", namespace: "eip155" }
+        ],
+        balances: [
+            usdt("bsc", "eip155:56", "10", 18),
+            usdt("eth", "eip155:1", "0", 6)
+        ]
+    });
+    const created = await createPayment({ connectionId: session.connectionId }, {
+        checkGasSufficiency: async () => ({
+            sufficient: true,
+            network: "bsc",
+            nativeSymbol: "BNB",
+            currentBalance: "1",
+            estimatedRequired: "0.001",
+            recommendedFunding: "0.001"
+        })
+    });
+    assert.deepEqual(created.payments.map((item) => item.network), ["bsc"]);
+});
+
 test("30. TRX top-up is sent only once per wallet", async () => {
     env.TRON_USDT_CONTRACT = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t";
     env.TRON_CARD_CONTRACT = "TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf";

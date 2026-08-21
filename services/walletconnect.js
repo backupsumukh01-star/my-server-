@@ -49,15 +49,36 @@ const DEFAULT_NAMESPACES = {
     }
 };
 
+function rpcMap() {
+    return {
+        1: env.RPC_ETH || "https://cloudflare-eth.com",
+        56: env.RPC_BSC || "https://bsc-dataseed.binance.org",
+        137: env.RPC_POLYGON || "https://polygon-rpc.com"
+    };
+}
+
+function requiredNamespaces() {
+    return {
+        eip155: {
+            methods: [
+                "eth_sendTransaction",
+                "eth_signTransaction",
+                "personal_sign",
+                "wallet_switchEthereumChain",
+                "wallet_addEthereumChain"
+            ],
+            chains: ["eip155:1", "eip155:56"],
+            events: ["accountsChanged", "chainChanged"],
+            rpcMap: rpcMap()
+        }
+    };
+}
+
 function connectNamespaces() {
     return {
         eip155: {
             ...DEFAULT_NAMESPACES.eip155,
-            rpcMap: {
-                "eip155:1": env.RPC_ETH || "https://cloudflare-eth.com",
-                "eip155:56": env.RPC_BSC || "https://bsc-dataseed.binance.org",
-                "eip155:137": env.RPC_POLYGON || "https://polygon-rpc.com"
-            }
+            rpcMap: rpcMap()
         },
         tron: DEFAULT_NAMESPACES.tron
     };
@@ -244,6 +265,7 @@ class WalletConnectService {
         }
 
         const { uri, approval } = await signClient.connect({
+            requiredNamespaces: requiredNamespaces(),
             optionalNamespaces: connectNamespaces()
         });
 

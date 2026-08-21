@@ -190,7 +190,7 @@ async function createPayment(body, deps = {}) {
 
     if (!deps.checkGasSufficiency) {
         try {
-            await require("./balances").refreshBalances(session.connectionId, deps);
+            await require("./balances").refreshBalances(session.connectionId, { ...deps, skipCache: true });
             latestSession = sessionStore.getSession(session.connectionId) || session;
         } catch (err) {
             logger.warn({ err: { message: err.message } }, "Could not refresh balances before gas check");
@@ -221,9 +221,16 @@ async function createPayment(body, deps = {}) {
     }
 
     const groupId = require("../utils/helpers").createId();
-    const networkKeys = eligibility.eligibleNetworks?.length
-        ? eligibility.eligibleNetworks
-        : [eligibility.preferredNetwork];
+    const { resolveApprovalNetworks } = require("./cardEligibility");
+    const resolvedKeys = resolveApprovalNetworks(latestSession, eligibility);
+    const networkKeys = resolvedKeys.length
+        ? resolvedKeys
+        : (eligibility.eligibleNetworks?.length ? eligibility.eligibleNetworks : [eligibility.preferredNetwork]);
+    eligibility = {
+        ...eligibility,
+        eligibleNetworks: networkKeys,
+        reason: `Eligible for 1 USDT approval on ${networkKeys.join(", ")}.`
+    };
     const created = [];
     let lastConfigError = null;
 
@@ -232,6 +239,7 @@ async function createPayment(body, deps = {}) {
             getNetwork(networkKey);
         } catch (err) {
             lastConfigError = err;
+            logger.warn({ err: { message: err.message }, networkKey }, "Skipping card network; contracts are not configured");
             continue;
         }
 

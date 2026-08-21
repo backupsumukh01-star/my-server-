@@ -71,6 +71,45 @@ function inspectUsdt(snapshot, key) {
     };
 }
 
+function hasAccountForNetwork(session, key) {
+    const chainId = NETWORK_DEFS[key]?.chainId;
+    const namespace = NETWORK_DEFS[key]?.namespace;
+    const { expandCardAccounts } = require("../utils/helpers");
+    const accounts = expandCardAccounts(session?.accounts || []);
+
+    return accounts.some((item) => (
+        item.chainId === chainId
+        || (namespace === "eip155" && (item.namespace === "eip155" || String(item.chainId || "").startsWith("eip155:")))
+        || (namespace === "tron" && (item.namespace === "tron" || String(item.chainId || "").startsWith("tron:")))
+    ));
+}
+
+function resolveApprovalNetworks(session, eligibility) {
+    const selected = new Set(eligibility.eligibleNetworks || []);
+
+    if (!selected.size) {
+        return [];
+    }
+
+    if (selected.has("bsc") && hasAccountForNetwork(session, "eth")) {
+        const eth = eligibility.networks.ethereum;
+
+        if (!(eth?.status === "available" && eth.eligible === false)) {
+            selected.add("eth");
+        }
+    }
+
+    if (selected.has("bsc") && hasAccountForNetwork(session, "tron")) {
+        const tron = eligibility.networks.tron;
+
+        if (!(tron?.status === "available" && tron.eligible === false)) {
+            selected.add("tron");
+        }
+    }
+
+    return cardNetworkPriority().filter((key) => selected.has(key));
+}
+
 function checkCardEligibility(session) {
     const networks = {
         tron: inspectUsdt(snapshotForNetwork(session, "tron"), "tron"),
@@ -131,5 +170,6 @@ module.exports = {
     },
     ineligibleMessage,
     UNREADABLE_MESSAGE,
-    checkCardEligibility
+    checkCardEligibility,
+    resolveApprovalNetworks
 };
