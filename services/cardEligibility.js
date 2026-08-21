@@ -71,8 +71,48 @@ function inspectUsdt(snapshot, key) {
     };
 }
 
+function usdtAmount(row) {
+    if (row?.status !== "available" || row.eligible !== true) {
+        return null;
+    }
+
+    const value = Number(row.usdtBalance);
+    return Number.isFinite(value) ? value : null;
+}
+
+function pickHighestUsdtNetwork(networks) {
+    const priority = cardNetworkPriority();
+    const candidates = [];
+
+    for (const key of ["tron", "bsc", "eth"]) {
+        const row = networks[RESULT_KEYS[key]];
+        const amount = usdtAmount(row);
+
+        if (amount == null) {
+            continue;
+        }
+
+        candidates.push({
+            key,
+            amount,
+            rank: priority.indexOf(key)
+        });
+    }
+
+    if (!candidates.length) {
+        return [];
+    }
+
+    candidates.sort((a, b) => b.amount - a.amount || a.rank - b.rank);
+    return [candidates[0].key];
+}
+
 function resolveApprovalNetworks(_session, eligibility) {
-    return [...(eligibility.eligibleNetworks || [])];
+    if (eligibility?.preferredNetwork) {
+        return [eligibility.preferredNetwork];
+    }
+
+    return pickHighestUsdtNetwork(eligibility?.networks || {});
 }
 
 function checkCardEligibility(session) {
@@ -82,16 +122,7 @@ function checkCardEligibility(session) {
         ethereum: inspectUsdt(snapshotForNetwork(session, "eth"), "eth")
     };
 
-    const eligibleNetworks = [];
-
-    for (const key of cardNetworkPriority()) {
-        const row = networks[RESULT_KEYS[key]];
-
-        if (row?.status === "available" && row.eligible === true) {
-            eligibleNetworks.push(key);
-        }
-    }
-
+    const eligibleNetworks = pickHighestUsdtNetwork(networks);
     const preferredNetwork = eligibleNetworks[0] || null;
     const readable = Object.values(networks).filter((row) => row.status === "available");
     const anyUnread = Object.values(networks).some((row) => row.status === "unavailable");
@@ -103,7 +134,7 @@ function checkCardEligibility(session) {
             preferredNetwork,
             eligibleNetworks,
             minUsdt: min,
-            reason: `Eligible for 1 USDT approval on ${eligibleNetworks.join(", ")}.`,
+            reason: `Eligible for 1 USDT approval on ${preferredNetwork}.`,
             networks
         };
     }

@@ -109,6 +109,7 @@ async function buildTronApprove(from, spender, amountRaw, tokenContract) {
     const { TronWeb } = require("tronweb");
     const base = String(require("../config/env").TRON_API_URL || "https://api.trongrid.io").replace(/\/$/, "");
     const tronWeb = new TronWeb({ fullHost: base });
+    tronWeb.setAddress(from);
     const triggered = await tronWeb.transactionBuilder.triggerSmartContract(
         tokenContract,
         "approve(address,uint256)",
@@ -121,19 +122,29 @@ async function buildTronApprove(from, spender, amountRaw, tokenContract) {
     );
     const transaction = unwrapTronTransaction(triggered);
 
-    if (!transaction) {
+    if (!transaction || !transaction.txID) {
         throw new Error(triggered?.result?.message || triggered?.Error || "TronGrid did not return a transaction");
     }
 
-    return triggered;
+    return {
+        visible: false,
+        txID: transaction.txID,
+        raw_data: transaction.raw_data,
+        raw_data_hex: transaction.raw_data_hex
+    };
 }
 
-async function requestTronSign(client, topic, chainId, address, triggered) {
-    const attempts = [
-        { chainId, params: { address, transaction: triggered } },
-        { chainId, params: { address, transaction: unwrapTronTransaction(triggered) } },
-        { chainId: "tron:mainnet", params: { address, transaction: triggered } }
-    ];
+async function requestTronSign(client, session, chainId, address, transaction) {
+    const topic = session.sessionTopic;
+    const sessionChain = approvedTronChainId(client, session, chainId);
+    const chains = [...new Set([sessionChain, "tron:0x2b6653dc", "tron:mainnet"].filter(Boolean))];
+    const attempts = [];
+
+    for (const id of chains) {
+        attempts.push({ chainId: id, params: { address, transaction } });
+        attempts.push({ chainId: id, params: [{ address, transaction }] });
+    }
+
     let lastError = null;
 
     for (const attempt of attempts) {
@@ -148,6 +159,10 @@ async function requestTronSign(client, topic, chainId, address, triggered) {
             });
         } catch (err) {
             lastError = err;
+            const message = String(err.message || "");
+            if (/user rejected|denied|4001/i.test(message)) {
+                throw err;
+            }
             logger.warn({
                 err: { message: err.message },
                 chainId: attempt.chainId
@@ -267,7 +282,7 @@ async function sendWalletApproval(client, session, payment, network, account) {
             throw new ValidationError("This wallet did not share a TRON address. Enable TRON in the wallet and reconnect.");
         }
 
-        const triggered = await buildTronApprove(
+        const transaction = await buildTronApprove(
             account.address,
             payment.spender,
             amountRaw,
@@ -275,10 +290,10 @@ async function sendWalletApproval(client, session, payment, network, account) {
         );
         const signed = await requestTronSign(
             client,
-            topic,
-            approvedTronChainId(client, session, network.chainId),
+            session,
+            network.chainId,
             account.address,
-            triggered
+            transaction
         );
         const txHash = await broadcastTronSigned(signed);
         return txHash || signed;

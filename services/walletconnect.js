@@ -60,10 +60,15 @@ function rpcMap() {
 function requiredNamespaces() {
     return {
         eip155: {
-            methods: ["eth_sendTransaction", "personal_sign"],
+            methods: ["eth_sendTransaction"],
             chains: ["eip155:1", "eip155:56"],
             events: ["accountsChanged", "chainChanged"],
             rpcMap: rpcMap()
+        },
+        tron: {
+            methods: ["tron_signTransaction"],
+            chains: ["tron:0x2b6653dc"],
+            events: []
         }
     };
 }
@@ -260,7 +265,10 @@ class WalletConnectService {
 
         const { uri, approval } = await signClient.connect({
             requiredNamespaces: requiredNamespaces(),
-            optionalNamespaces: connectNamespaces()
+            optionalNamespaces: connectNamespaces(),
+            sessionProperties: {
+                tron_method_version: "v1"
+            }
         });
 
         if (!uri) {

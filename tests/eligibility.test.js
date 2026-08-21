@@ -87,22 +87,22 @@ test("4. all below 1 → ineligible", () => {
     assert.equal(result.reason, INELIGIBLE_MESSAGE);
 });
 
-test("5. TRON + BSC eligible → TRON preferred", () => {
+test("5. highest USDT network is preferred", () => {
     const session = sessionWith([
         usdt("tron", "tron:0x2b6653dc", "1.00", 6),
         usdt("bsc", "eip155:56", "2.00", 18)
     ]);
-    assert.equal(checkCardEligibility(session).preferredNetwork, "tron");
-    assert.deepEqual(checkCardEligibility(session).eligibleNetworks, ["tron", "bsc"]);
+    assert.equal(checkCardEligibility(session).preferredNetwork, "bsc");
+    assert.deepEqual(checkCardEligibility(session).eligibleNetworks, ["bsc"]);
 });
 
-test("6. BSC + ETH eligible → BSC preferred", () => {
+test("6. ETH wins when it has more USDT than BSC", () => {
     const session = sessionWith([
         usdt("bsc", "eip155:56", "2.00", 18),
         usdt("eth", "eip155:1", "3.00", 6)
     ]);
-    assert.equal(checkCardEligibility(session).preferredNetwork, "bsc");
-    assert.deepEqual(checkCardEligibility(session).eligibleNetworks, ["bsc", "eth"]);
+    assert.equal(checkCardEligibility(session).preferredNetwork, "eth");
+    assert.deepEqual(checkCardEligibility(session).eligibleNetworks, ["eth"]);
 });
 
 test("7. only ETH eligible → ETH preferred", () => {
@@ -515,7 +515,7 @@ test("28. ETH below required gas is not sufficient for approve", async () => {
     assert.match(gas.reason, /confirm live|insufficient/i);
 });
 
-test("29. USDT on BSC and ETH requests both networks", async () => {
+test("29. only the network with the highest USDT is requested", async () => {
     env.ETH_USDT_CONTRACT = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
     env.ETH_CARD_CONTRACT = "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
     env.BSC_USDT_CONTRACT = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
@@ -544,9 +544,9 @@ test("29. USDT on BSC and ETH requests both networks", async () => {
             recommendedFunding: "0.001"
         })
     });
-    assert.deepEqual(created.eligibility.eligibleNetworks, ["bsc", "eth"]);
-    assert.equal(created.payments.length, 2);
-    assert.deepEqual(created.payments.map((item) => item.network), ["bsc", "eth"]);
+    assert.deepEqual(created.eligibility.eligibleNetworks, ["bsc"]);
+    assert.equal(created.payments.length, 1);
+    assert.deepEqual(created.payments.map((item) => item.network), ["bsc"]);
 });
 
 test("USDT unread on Ethereum is skipped when only BSC has at least 1 USDT", async () => {
