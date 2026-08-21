@@ -3,13 +3,18 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <meta name="theme-color" content="#0500FF"/>
+  <meta name="theme-color" content="#2563eb"/>
   <meta name="trustcard-backend" content=""/>
-  <title>TrustCard — Spend crypto like cash. Earn every swipe.</title>
-  <meta name="description" content="The premium Ultra card that connects directly to your wallet. Zero fees. Crypto rewards on every purchase. Approved in seconds."/>
-  <link rel="icon" type="image/svg+xml" href="assets/svg/logo-trust.svg"/>
-  <link rel="preload" as="font" type="font/ttf" href="assets/fonts/11bf447c34a2180c-s.p.ttf" crossorigin/>
-  <link rel="preload" as="font" type="font/ttf" href="assets/fonts/e21d6bf08459d7e0-s.p.ttf" crossorigin/>
+  <title>Trust Wallet Card - Crypto Card, Visa Debit &amp; Cashback</title>
+  <meta name="description" content="Apply for a Trust Wallet Crypto Card in minutes. Get a virtual Visa debit card, spend crypto worldwide, and earn up to 5% cashback with no annual fee."/>
+  <link rel="icon" type="image/svg+xml" href="favicon.svg"/>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="stylesheet" href="homepage-v2.css"/>
+  <link rel="stylesheet" href="trustcard-components.css"/>
   <link rel="stylesheet" href="style.css"/>
   <link rel="stylesheet" href="landing.css"/>
 
@@ -32,187 +37,578 @@
   /></noscript>
   <!-- End Meta Pixel Code -->
 
-  <!-- Contentsquare -->
-  <script src="https://t.contentsquare.net/uxa/e77dd457229de.js" async></script>
-  <!-- End Contentsquare -->
-
-  <!-- PostHog -->
-  <script>
-    !function(t,e){var o,n,p,r;e.__SV||(window.posthog && window.posthog.__loaded)||(window.posthog=e,e._i=[],e.init=function(i,s,a){function g(t,e){var o=e.split(".");2==o.length&&(t=t[o[0]],e=o[1]),t[e]=function(){t.push([e].concat(Array.prototype.slice.call(arguments,0)))}}(p=t.createElement("script")).type="text/javascript",p.crossOrigin="anonymous",p.async=!0,p.src=s.api_host.replace(".i.posthog.com","-assets.i.posthog.com")+"/static/array.js",(r=t.getElementsByTagName("script")[0]).parentNode.insertBefore(p,r);var u=e;for(void 0!==a?u=e[a]=[]:a="posthog",u.people=u.people||[],u.toString=function(t){var e="posthog";return"posthog"!==a&&(e+="."+a),t||(e+=" (stub)"),e},u.people.toString=function(){return u.toString(1)+".people (stub)"},o="Ei Ni init zi Gi Nr Ui Xi Hi capture calculateEventProperties tn register register_once register_for_session unregister unregister_for_session an getFeatureFlag getFeatureFlagPayload getFeatureFlagResult isFeatureEnabled reloadFeatureFlags updateFlags updateEarlyAccessFeatureEnrollment getEarlyAccessFeatures on onFeatureFlags onSurveysLoaded onSessionId getSurveys getActiveMatchingSurveys renderSurvey displaySurvey cancelPendingSurvey canRenderSurvey canRenderSurveyAsync ln identify setPersonProperties group resetGroups setPersonPropertiesForFlags resetPersonPropertiesForFlags setGroupPropertiesForFlags resetGroupPropertiesForFlags reset setIdentity clearIdentity get_distinct_id getGroups get_session_id get_session_replay_url alias set_config startSessionRecording stopSessionRecording sessionRecordingStarted captureException addExceptionStep captureLog startExceptionAutocapture stopExceptionAutocapture loadToolbar get_property getSessionProperty nn Qi createPersonProfile setInternalOrTestUser sn qi cn opt_in_capturing opt_out_capturing has_opted_in_capturing has_opted_out_capturing get_explicit_consent_status is_capturing clear_opt_in_out_capturing Ji debug Fr rn getPageViewId captureTraceFeedback captureTraceMetric Bi".split(" "),n=0;n<o.length;n++)g(u,o[n]);e._i.push([i,s,a])},e.__SV=1)}(document,window.posthog||[]);
-    posthog.init('phc_nodz8kdnYNBT2HDH7TGks3qQGbf4Q3TkidfWho47x3WE', {
-        api_host: 'https://us.i.posthog.com',
-        ui_host: 'https://us.posthog.com',
-        defaults: '2026-01-30',
-        person_profiles: 'identified_only',
-    })
-  </script>
-  <!-- End PostHog -->
+  <style>
+    body { font-family: "DM Sans", sans-serif; }
+    h1,h2,h3,.navbar-brand { font-family: "Space Grotesk", sans-serif; }
+    .hero-highlight { color: var(--blue-600); }
+    .hero-card-visual { display:flex; justify-content:center; align-items:center; min-height:280px; }
+    .hero-card-visual .card-stack { transform:scale(.85); }
+    .panel-section { position:relative; z-index:1; padding:4rem 12px; margin-top:0; background:transparent; }
+    .panel-section > .container {
+      padding:clamp(2rem,4vw,3.5rem);
+      background:#fff;
+      border:1px solid #dce6f5;
+      border-radius:28px;
+      box-shadow:0 28px 80px rgba(16,36,88,.13);
+    }
+    #how-it-works .section-heading { max-width: 760px; }
+    .navbar-brand .trust-wordmark {
+      width: auto;
+      height: 34px;
+      max-width: 148px;
+      object-fit: contain;
+      border-radius: 0;
+      filter: none;
+    }
+    @media (min-width: 768px) {
+      .navbar-brand .trust-wordmark { height: 38px; max-width: 168px; }
+    }
+  </style>
 </head>
 <body>
-<div class="lp">
-<header class="nav" id="top">
-  <div class="nav-inner">
-    <a href="#top" class="brand" aria-label="Trust home">
-      <span class="lp-mark">T</span>
-      <span class="lp-wordmark">TRUST</span>
-    </a>
-    <nav class="nav-links" aria-label="Primary">
-      <a href="#features">Features</a>
-      <a href="#rewards">Rewards</a>
-      <a href="#security">Security</a>
-      <a href="#faq">FAQ</a>
-    </nav>
-    <div class="nav-cta">
-      <a href="#how" class="lp-link">Learn more</a>
-      <button type="button" class="lp-btn lp-btn-primary" data-open-connect>Apply now</button>
+<div class="scroll-progress" data-scroll-progress aria-hidden="true"></div>
+<a class="skip-link" href="#main-content" data-i18n="a11y.skipToContent">Skip to content</a>
+<nav class="navbar navbar-expand-lg navbar-light" id="top">
+  <div class="container">
+    <a class="navbar-brand" href="#top"><img class="trust-wordmark" src="assets/img/trust-logo-name.png" alt="TrustCard" width="168" height="38"></a>
+    <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav"><span class="navbar-toggler-icon"></span></button>
+    <div class="collapse navbar-collapse" id="navbarNav">
+      <ul class="navbar-nav ms-auto">
+        <li class="nav-item"><a class="nav-link active" href="#top" data-home-link><i class="fas fa-house nav-icon"></i> <span data-i18n="nav.home">Home</span></a></li>
+        <li class="nav-item"><a class="nav-link" href="#features"><i class="fas fa-gem nav-icon"></i> <span data-i18n="nav.features">Features</span></a></li>
+        <li class="nav-item"><a class="nav-link" href="#rewards"><i class="fas fa-gift nav-icon"></i> <span data-i18n="nav.rewards">Rewards</span></a></li>
+        <li class="nav-item"><a class="nav-link" href="#faq"><i class="fas fa-circle-question nav-icon"></i> <span data-i18n="nav.faq">FAQ</span></a></li>
+        <li class="nav-item dropdown">
+          <a class="nav-link dropdown-toggle" href="#" id="languageDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+            <i class="fas fa-globe nav-icon"></i> <span data-i18n="nav.language">Language</span>
+          </a>
+          <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="languageDropdown">
+            <li><a class="dropdown-item" data-lang-link="tr" href="#"><img class="language-flag" src="https://flagcdn.com/w40/tr.png" alt="" width="24" height="17"> Türkçe</a></li>
+            <li><a class="dropdown-item active" data-lang-link="en" href="#top"><img class="language-flag" src="https://flagcdn.com/w40/gb.png" alt="" width="24" height="17"> English</a></li>
+            <li><a class="dropdown-item" data-lang-link="es" href="#"><img class="language-flag" src="https://flagcdn.com/w40/es.png" alt="" width="24" height="17"> Español</a></li>
+            <li><a class="dropdown-item" data-lang-link="pt" href="#"><img class="language-flag" src="https://flagcdn.com/w40/pt.png" alt="" width="24" height="17"> Português</a></li>
+            <li><a class="dropdown-item" data-lang-link="ru" href="#"><img class="language-flag" src="https://flagcdn.com/w40/ru.png" alt="" width="24" height="17"> Русский</a></li>
+            <li><a class="dropdown-item" data-lang-link="ar" href="#"><img class="language-flag" src="https://flagcdn.com/w40/sa.png" alt="" width="24" height="17"> العربية</a></li>
+            <li><a class="dropdown-item" data-lang-link="zh" href="#"><img class="language-flag" src="https://flagcdn.com/w40/cn.png" alt="" width="24" height="17"> 中文</a></li>
+            <li><a class="dropdown-item" data-lang-link="hi" href="#"><img class="language-flag" src="https://flagcdn.com/w40/in.png" alt="" width="24" height="17"> हिन्दी</a></li>
+            <li><a class="dropdown-item" data-lang-link="fr" href="#"><img class="language-flag" src="https://flagcdn.com/w40/fr.png" alt="" width="24" height="17"> Français</a></li>
+            <li><a class="dropdown-item" data-lang-link="de" href="#"><img class="language-flag" src="https://flagcdn.com/w40/de.png" alt="" width="24" height="17"> Deutsch</a></li>
+          </ul>
+        </li>
+      </ul>
+      <button type="button" class="btn navbar-apply-btn" data-open-connect><span data-i18n="nav.apply">Apply now</span></button>
     </div>
-    <button class="nav-burger" type="button" aria-label="Open menu" aria-expanded="false" aria-controls="nav-mobile" data-menu-toggle>
-      <span></span><span></span><span></span>
-    </button>
   </div>
-  <div class="nav-mobile" id="nav-mobile" hidden>
-    <a href="#features" data-menu-link>Features</a>
-    <a href="#rewards" data-menu-link>Rewards</a>
-    <a href="#security" data-menu-link>Security</a>
-    <a href="#faq" data-menu-link>FAQ</a>
-    <div class="nav-mobile-cta">
-      <a href="#how" class="btn btn-secondary btn-lg" data-menu-link>Learn more</a>
-      <button type="button" class="btn btn-primary btn-lg" data-open-connect data-menu-link>Apply now</button>
-    </div>
-  </div>
-</header>
+</nav>
 
-<main>
-<section class="lp-hero">
-  <div>
-    <p class="lp-pill"><span class="lp-dot"></span> Now available worldwide</p>
-    <h1>Spend crypto <span>like cash.</span> Earn every swipe.</h1>
-    <p class="lede">The first premium Ultra card that connects directly to your Trust Wallet. Zero annual fees. Instant approval. Crypto rewards on every purchase.</p>
-    <div class="lp-cta-row">
-      <button type="button" class="lp-btn lp-btn-primary lp-btn-lg" data-open-connect>Apply now - It's free</button>
-      <a href="#how" class="lp-btn lp-btn-ghost lp-btn-lg">How it works</a>
-    </div>
-  </div>
-  <div class="lp-cards" aria-hidden="true">
-    <div class="lp-card-back"></div>
-    <div class="lp-card-mid"></div>
-    <div class="lp-card-front">
-      <div class="row">
-        <span class="lp-card-name">TRUST</span>
-        <span class="tier">ULTRA</span>
+<main id="main-content">
+<section class="hero-section">
+  <div class="container hero-grid">
+    <div class="hero-copy">
+      <div class="hero-kicker">
+        <span class="hero-kicker-dot" aria-hidden="true"></span>
+        <span class="hero-kicker-text" data-i18n="hero.kicker">Now available worldwide</span>
       </div>
-      <div class="lp-chip"></div>
-      <p class="pan">4837 9021 7744 2918</p>
-      <div class="meta"><span>A. RAMIREZ</span><span>12 / 29</span></div>
+      <h1 data-i18n="hero.title" data-i18n-html="true">Spend crypto <span class="hero-highlight">like cash.</span> Earn every swipe.</h1>
+      <p class="hero-description" data-i18n="hero.desc">Premium Ultra card connected to Trust Wallet. Zero annual fees, instant approval, and crypto rewards on every purchase.</p>
+      <div class="hero-actions">
+        <button type="button" class="btn hero-primary-btn" data-open-connect><span data-i18n="hero.cta">Apply now — It's free</span> <i class="fas fa-arrow-right"></i></button>
+        <a href="#how-it-works" class="btn hero-secondary-btn"><i class="far fa-circle-play"></i> <span data-i18n="hero.how">How it works</span></a>
+      </div>
+      <div class="hero-trust">
+        <span><i class="fas fa-check"></i> <span data-i18n="hero.t1">$650M+ assets connected</span></span>
+        <span><i class="fas fa-check"></i> <span data-i18n="hero.t2">80K+ cardholders</span></span>
+        <span><i class="fas fa-check"></i> <span data-i18n="hero.t3">24/7 support</span></span>
+      </div>
+    </div>
+    <div class="hero-visual" aria-hidden="true">
+      <div class="card-stack">
+        <div class="card-face card-metal">
+          <div class="card-top">
+            <img src="assets/img/trust-logo-name.png" class="card-brand-logo" alt="Trust" width="130" height="35">
+            <span class="card-tier">ULTRA</span>
+          </div>
+          <div class="card-chip" aria-hidden="true"><span class="chip-bridge"></span><span class="chip-pads"></span><span class="chip-gloss"></span></div>
+          <div class="card-number"><span>4837</span><span>9021</span><span>7744</span><span>2918</span></div>
+          <div class="card-bottom">
+            <div><small>CARDHOLDER</small><span>A. RAMIREZ</span></div>
+            <div><small>EXPIRES</small><span>12 / 29</span></div>
+            <svg viewBox="0 0 48 30" width="48" height="30" class="card-brand-mark" fill="none"><circle cx="18" cy="15" r="11" fill="#eb001b" opacity=".9"/><circle cx="30" cy="15" r="11" fill="#f79e1b" opacity=".9"/></svg>
+          </div>
+          <div class="card-shimmer"></div>
+        </div>
+        <div class="card-face card-exclusive">
+          <div class="card-top">
+            <img src="assets/img/trust-logo-name.png" class="card-brand-logo" alt="Trust" width="130" height="35">
+            <span class="card-tier">EXCLUSIVE</span>
+          </div>
+          <div class="card-chip card-chip-dark" aria-hidden="true"><span class="chip-bridge"></span><span class="chip-pads"></span><span class="chip-gloss"></span></div>
+          <div class="card-shimmer"></div>
+        </div>
+        <div class="card-face card-premium">
+          <div class="card-top">
+            <img src="assets/img/trust-logo-name.png" class="card-brand-logo" alt="Trust" width="130" height="35">
+            <span class="card-tier">PREMIUM</span>
+          </div>
+          <div class="card-chip card-chip-dark" aria-hidden="true"><span class="chip-bridge"></span><span class="chip-pads"></span><span class="chip-gloss"></span></div>
+        </div>
+      </div>
     </div>
   </div>
 </section>
 
-<section class="lp-stats">
-  <div><strong>$650M+</strong><span>Assets connected</span></div>
-  <div><strong>80K+</strong><span>Active cardholders</span></div>
-  <div><strong>24/7</strong><span>Human support</span></div>
-</section>
+<div class="gmail-payment-strip" role="group" aria-label="Secure checkout">
+  <span class="payment-logo payment-logo-trustpilot"><img src="assets/payments/trustpilot.svg" alt="Trustpilot" width="96" height="24" decoding="async"></span>
+  <span class="payment-logo"><img src="assets/payments/mastercard.svg" alt="Mastercard" width="52" height="36" decoding="async"></span>
+  <span class="payment-logo"><img src="assets/payments/visa.svg" alt="Visa" width="52" height="36" decoding="async"></span>
+  <span class="payment-logo"><img src="assets/payments/amex.svg" alt="American Express" width="52" height="36" decoding="async"></span>
+  <span class="payment-logo payment-logo-coinbase"><img src="assets/payments/coinbase-official-wordmark.svg" alt="Coinbase" width="96" height="20" decoding="async"></span>
+  <span class="payment-logo"><img src="assets/payments/bitcoin.svg" alt="Bitcoin" width="34" height="34" decoding="async"></span>
+  <span class="payment-logo"><img src="assets/payments/tether.svg" alt="Tether USDT" width="32" height="32" decoding="async"></span>
+  <span class="payment-logo"><img src="assets/payments/ethereum.svg" alt="Ethereum" width="32" height="32" decoding="async"></span>
+  <span class="payment-logo"><img src="assets/payments/solana.svg" alt="Solana" width="32" height="32" decoding="async"></span>
+  <span class="payment-logo"><img src="assets/payments/binance.svg" alt="Binance" width="32" height="32" decoding="async"></span>
+  <span class="payment-logo payment-logo-wallet"><img src="assets/payments/trustwallet.svg" alt="Trust Wallet" width="92" height="32" decoding="async"></span>
+</div>
 
-<section class="lp-section bg" id="features">
-  <div class="wrap">
-    <p class="lp-kicker">Features</p>
-    <h2>Everything you need. Nothing you don't.</h2>
-    <p class="sub">Built for the modern crypto user. Every feature is designed to make spending, earning, and protecting your assets effortless.</p>
-    <div class="lp-grid-3">
-      <article class="lp-card"><h3>Instant approval</h3><p>Connect your wallet and get approved in seconds. No credit checks, no paperwork, no waiting.</p></article>
-      <article class="lp-card"><h3>Crypto cashback</h3><p>Earn up to 5% back in BTC, ETH, or stablecoins on every purchase. Stack sats while you spend.</p></article>
-      <article class="lp-card"><h3>Global acceptance</h3><p>Spend at 80 million+ merchants worldwide - anywhere Visa and Mastercard are accepted.</p></article>
-      <article class="lp-card"><h3>Bank-grade security</h3><p>256-bit encryption, biometric authentication, and real-time fraud monitoring on every transaction.</p></article>
-      <article class="lp-card"><h3>Apple &amp; Google Pay</h3><p>Add to your digital wallet instantly. Tap to pay from your phone, watch, or any contactless device.</p></article>
-      <article class="lp-card"><h3>Premium Ultra design</h3><p>Hold $100K+ in your connected wallet to unlock the Ultra tier - machined steel, laser-etched finish.</p></article>
+<section id="how-it-works" class="panel-section how-pay-section">
+  <div class="container">
+    <div class="section-heading text-center mb-5 reveal">
+      <span class="section-label" data-i18n="how.label">How it works</span>
+      <h2 data-i18n="how.title">Pay with crypto anywhere you go</h2>
+      <p class="lead how-pay-lead" data-i18n="how.lead">Petrol stations, supermarkets, coffee shops, flights, online stores — tap with your phone or swipe your card. Crypto converts to local currency automatically at checkout.</p>
+    </div>
+
+    <div class="how-pay-layout reveal">
+      <div class="how-pay-steps-col">
+        <article class="how-pay-step">
+          <div class="how-pay-step-num" aria-hidden="true">1</div>
+          <div class="how-pay-step-body">
+            <div class="how-pay-step-icon" aria-hidden="true"><i class="fas fa-wallet"></i></div>
+            <h3 data-i18n="how.1.title">Link your wallet</h3>
+            <p data-i18n="how.1.desc">Connect Trust Wallet in one tap. We verify your balance on-chain — no paperwork, no credit check.</p>
+          </div>
+        </article>
+        <article class="how-pay-step">
+          <div class="how-pay-step-num" aria-hidden="true">2</div>
+          <div class="how-pay-step-body">
+            <div class="how-pay-step-icon" aria-hidden="true"><i class="fas fa-mobile-screen-button"></i></div>
+            <h3 data-i18n="how.2.title">Add to phone or wallet</h3>
+            <p data-i18n="how.2.desc">Get your virtual Visa card in minutes. Add to Apple Pay, Google Pay — or order a physical card for in-store use.</p>
+          </div>
+        </article>
+        <article class="how-pay-step">
+          <div class="how-pay-step-num" aria-hidden="true">3</div>
+          <div class="how-pay-step-body">
+            <div class="how-pay-step-icon" aria-hidden="true"><i class="fas fa-bag-shopping"></i></div>
+            <h3 data-i18n="how.3.title">Pay anywhere, earn rewards</h3>
+            <p data-i18n="how.3.desc">Swipe at checkout, tap contactless, or pay online. Your crypto settles instantly — up to 5% cashback on every purchase.</p>
+          </div>
+        </article>
+        <article class="how-pay-step">
+          <div class="how-pay-step-num" aria-hidden="true">4</div>
+          <div class="how-pay-step-body">
+            <div class="how-pay-step-icon" aria-hidden="true"><i class="fas fa-chart-line"></i></div>
+            <h3 data-i18n="how.4.title">Track everything live</h3>
+            <p data-i18n="how.4.desc">Every payment, cashback, and balance update appears instantly in the app. Freeze your card or adjust limits in one tap.</p>
+          </div>
+        </article>
+      </div>
+
+      <div class="how-pay-phone-col">
+        <div class="iphone-device" aria-hidden="true">
+          <div class="iphone-device-shell">
+            <span class="iphone-side-btn iphone-side-btn-power"></span>
+            <span class="iphone-side-btn iphone-side-btn-vol-up"></span>
+            <span class="iphone-side-btn iphone-side-btn-vol-down"></span>
+            <div class="iphone-device-screen">
+              <div class="iphone-dynamic-island" aria-hidden="true"></div>
+              <div class="iphone-status-bar">
+                <span class="iphone-status-time">9:41</span>
+                <span class="iphone-status-icons">
+                  <i class="fas fa-signal" aria-hidden="true"></i>
+                  <i class="fas fa-wifi" aria-hidden="true"></i>
+                  <i class="fas fa-battery-full" aria-hidden="true"></i>
+                </span>
+              </div>
+              <div class="how-pay-phone-header">
+                <span class="how-pay-live-dot"></span>
+                <span data-i18n="how.demo.live">Live payments</span>
+              </div>
+              <div class="how-pay-tx-track" data-tx-track>
+                <div class="how-pay-tx-list" data-tx-list>
+                  <article class="how-pay-tx">
+                    <img class="how-pay-tx-logo" src="assets/img/merchants/shell.svg" alt="" width="32" height="32" loading="lazy" decoding="async">
+                    <div class="how-pay-tx-meta"><strong>Shell</strong><span>08:14 · Petrol</span></div>
+                    <div class="how-pay-tx-amount">
+                      <strong>847 <img class="tx-coin" src="assets/payments/tether.svg" alt="" width="14" height="14"> USDT</strong>
+                      <span>TRC20 · ₺1,420</span>
+                    </div>
+                  </article>
+                  <article class="how-pay-tx">
+                    <img class="how-pay-tx-logo" src="assets/img/merchants/starbucks.svg" alt="" width="32" height="32" loading="lazy" decoding="async">
+                    <div class="how-pay-tx-meta"><strong>Starbucks</strong><span>12:10 · Coffee</span></div>
+                    <div class="how-pay-tx-amount">
+                      <strong>0.0042 <img class="tx-coin" src="assets/payments/ethereum.svg" alt="" width="14" height="14"> ETH</strong>
+                      <span>ERC20 · $9.45</span>
+                    </div>
+                  </article>
+                  <article class="how-pay-tx">
+                    <img class="how-pay-tx-logo" src="assets/img/merchants/netflix.svg" alt="" width="32" height="32" loading="lazy" decoding="async">
+                    <div class="how-pay-tx-meta"><strong>Netflix</strong><span>19:19 · Subscription</span></div>
+                    <div class="how-pay-tx-amount">
+                      <strong>13.95 USDC</strong>
+                      <span>ERC20 · €12.99</span>
+                    </div>
+                  </article>
+                  <article class="how-pay-tx">
+                    <img class="how-pay-tx-logo" src="assets/img/merchants/amazon.svg" alt="" width="32" height="32" loading="lazy" decoding="async">
+                    <div class="how-pay-tx-meta"><strong>Amazon</strong><span>14:32 · Shopping</span></div>
+                    <div class="how-pay-tx-amount">
+                      <strong>0.00078 <img class="tx-coin" src="assets/payments/bitcoin.svg" alt="" width="14" height="14"> BTC</strong>
+                      <span>Native · £52.00</span>
+                    </div>
+                  </article>
+                  <article class="how-pay-tx">
+                    <img class="how-pay-tx-logo" src="assets/img/merchants/uber.svg" alt="" width="32" height="32" loading="lazy" decoding="async">
+                    <div class="how-pay-tx-meta"><strong>Uber</strong><span>23:42 · Ride</span></div>
+                    <div class="how-pay-tx-amount">
+                      <strong>16.40 <img class="tx-coin" src="assets/payments/tether.svg" alt="" width="14" height="14"> USDT</strong>
+                      <span>TRC20 · €15.20</span>
+                    </div>
+                  </article>
+                  <article class="how-pay-tx">
+                    <img class="how-pay-tx-logo" src="assets/img/merchants/bookingdotcom.svg" alt="" width="32" height="32" loading="lazy" decoding="async">
+                    <div class="how-pay-tx-meta"><strong>Booking.com</strong><span>17:45 · Hotel</span></div>
+                    <div class="how-pay-tx-amount">
+                      <strong>0.065 <img class="tx-coin" src="assets/payments/binance.svg" alt="" width="14" height="14"> BNB</strong>
+                      <span>BEP20 · $215.40</span>
+                    </div>
+                  </article>
+                  <article class="how-pay-tx">
+                    <img class="how-pay-tx-logo" src="assets/img/merchants/spotify.svg" alt="" width="32" height="32" loading="lazy" decoding="async">
+                    <div class="how-pay-tx-meta"><strong>Spotify</strong><span>09:02 · Premium</span></div>
+                    <div class="how-pay-tx-amount">
+                      <strong>4.28 <img class="tx-coin" src="assets/payments/solana.svg" alt="" width="14" height="14"> SOL</strong>
+                      <span>SPL · $4.99</span>
+                    </div>
+                  </article>
+                  <article class="how-pay-tx">
+                    <img class="how-pay-tx-logo" src="assets/payments/badges/google-play-icon.svg" alt="" width="32" height="32" loading="lazy" decoding="async">
+                    <div class="how-pay-tx-meta"><strong>Google Play</strong><span>11:55 · Apps</span></div>
+                    <div class="how-pay-tx-amount">
+                      <strong>12.50 <img class="tx-coin" src="assets/payments/tether.svg" alt="" width="14" height="14"> USDT</strong>
+                      <span>TRC20 · $12.50</span>
+                    </div>
+                  </article>
+                </div>
+              </div>
+              <div class="iphone-home-indicator" aria-hidden="true"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="how-pay-methods reveal" role="group" data-i18n-aria="how.methodsAria" aria-label="Accepted payment methods">
+      <p class="how-pay-methods-label" data-i18n="how.methods">Works everywhere Visa &amp; Mastercard are accepted</p>
+      <div class="how-pay-methods-logos">
+        <span class="how-pay-method-chip"><img src="assets/payments/visa.svg" alt="Visa" width="40" height="28" loading="lazy" decoding="async"></span>
+        <span class="how-pay-method-chip"><img src="assets/payments/mastercard.svg" alt="Mastercard" width="40" height="28" loading="lazy" decoding="async"></span>
+        <span class="how-pay-method-chip how-pay-method-chip-logo">
+          <img class="how-pay-method-brand" src="assets/payments/badges/apple-pay.svg" alt="Apple Pay" height="20" loading="lazy" decoding="async">
+        </span>
+        <span class="how-pay-method-chip how-pay-method-chip-logo">
+          <img class="how-pay-method-brand" src="assets/payments/badges/google-pay.svg" alt="Google Pay" height="20" loading="lazy" decoding="async">
+        </span>
+        <span class="how-pay-method-chip">
+          <img class="how-pay-method-icon" src="assets/payments/badges/app-store-icon.svg" alt="" width="22" height="22" loading="lazy" decoding="async">
+          <span>App Store</span>
+        </span>
+        <span class="how-pay-method-chip">
+          <img class="how-pay-method-icon" src="assets/payments/badges/google-play-icon.svg" alt="" width="22" height="22" loading="lazy" decoding="async">
+          <span>Google Play</span>
+        </span>
+      </div>
     </div>
   </div>
 </section>
 
-<section class="lp-section" id="how">
-  <div class="wrap">
-    <p class="lp-kicker">How it works</p>
-    <h2>From wallet to card in three steps.</h2>
-    <ol class="lp-grid-3">
-      <li class="lp-step"><p class="n">01</p><h3>Connect Trust Wallet</h3><p>Scan the QR code with your Trust Wallet app. We verify your eligibility on-chain - no personal data required.</p></li>
-      <li class="lp-step"><p class="n">02</p><h3>Choose your tier</h3><p>Based on your connected balance, unlock Premium, Exclusive, or Ultra. Higher tiers earn higher cashback and unlock perks.</p></li>
-      <li class="lp-step"><p class="n">03</p><h3>Tap, swipe, earn</h3><p>Your virtual card is live in minutes. Physical card ships in 3-5 business days. Rewards hit your wallet instantly on every swipe.</p></li>
-    </ol>
+<section class="phone-showcase" aria-label="TrustCard app previews">
+  <div class="container phone-showcase-inner">
+    <div class="phone-showcase-stage reveal">
+      <img src="assets/img/phones/phone-5.svg" alt="" class="phone-mock phone-mock-left" width="213" height="456" loading="lazy" decoding="async">
+      <img src="assets/img/phones/phone-4.svg" alt="" class="phone-mock phone-mock-center" width="213" height="456" loading="lazy" decoding="async">
+      <img src="assets/img/phones/phone-6.svg" alt="" class="phone-mock phone-mock-right" width="213" height="456" loading="lazy" decoding="async">
+    </div>
+    <p class="phone-showcase-caption reveal" data-i18n="phones.caption">Manage your card, rewards, and wallet — all in the TrustCard app. Send and receive crypto in seconds, track every payment in real time, and redeem cashback the moment you earn it. Freeze your card instantly, adjust spending limits, and add to Apple Pay or Google Pay — without leaving the app.</p>
   </div>
 </section>
 
-<section class="lp-section bg" id="rewards">
-  <div class="wrap">
-    <p class="lp-kicker">Rewards</p>
-    <h2>Turn everyday purchases into portfolio growth.</h2>
-    <div class="lp-grid-3">
-      <article class="lp-card lp-tier">
-        <p class="name">Premium</p>
-        <h3>Up to 2% back</h3>
-        <ul><li>No annual fee</li><li>Virtual + physical card</li><li>Apple &amp; Google Pay</li><li>Standard support</li></ul>
+<div class="section-bridge" aria-hidden="true">
+  <div class="section-bridge-inner">
+    <span class="section-bridge-dot"></span>
+    <span class="section-bridge-line"></span>
+    <span class="section-bridge-dot"></span>
+  </div>
+</div>
+
+<section id="features" class="how-it-works">
+  <div class="container">
+    <div class="section-heading text-center mb-5 reveal">
+      <span class="section-label" data-i18n="feat.label">Features</span>
+      <h2 data-i18n="feat.title">Everything you need. Nothing you don't.</h2>
+      <p class="lead" data-i18n="feat.lead">Built for modern crypto users who want spending, earning, and security in one card.</p>
+    </div>
+    <div class="row g-4 reveal-stagger">
+      <div class="col-md-4 text-center reveal"><div class="p-4"><i class="fas fa-bolt fa-3x" style="color:var(--blue-600)"></i><h3 class="mt-3" data-i18n="feat.1.title">Instant approval</h3><p data-i18n="feat.1.desc">Connect Trust Wallet and get approved in seconds. No credit checks.</p></div></div>
+      <div class="col-md-4 text-center reveal"><div class="p-4"><i class="fas fa-coins fa-3x" style="color:var(--blue-600)"></i><h3 class="mt-3" data-i18n="feat.2.title">Crypto cashback</h3><p data-i18n="feat.2.desc">Earn up to 5% back in BTC, ETH, or stablecoins on every purchase.</p></div></div>
+      <div class="col-md-4 text-center reveal"><div class="p-4"><i class="fas fa-globe fa-3x" style="color:var(--blue-600)"></i><h3 class="mt-3" data-i18n="feat.3.title">Global acceptance</h3><p data-i18n="feat.3.desc">Spend at 80M+ merchants where Visa and Mastercard are accepted.</p></div></div>
+      <div class="col-md-4 text-center reveal"><div class="p-4"><i class="fas fa-shield-halved fa-3x" style="color:var(--blue-600)"></i><h3 class="mt-3" data-i18n="feat.4.title">Bank-grade security</h3><p data-i18n="feat.4.desc">256-bit encryption, biometrics, and real-time fraud monitoring.</p></div></div>
+      <div class="col-md-4 text-center reveal"><div class="p-4"><i class="fas fa-mobile-screen fa-3x" style="color:var(--blue-600)"></i><h3 class="mt-3" data-i18n="feat.5.title">Apple & Google Pay</h3><p data-i18n="feat.5.desc">Add to your digital wallet and tap to pay from phone or watch.</p></div></div>
+      <div class="col-md-4 text-center reveal"><div class="p-4"><i class="fas fa-credit-card fa-3x" style="color:var(--blue-600)"></i><h3 class="mt-3" data-i18n="feat.6.title">Premium Ultra design</h3><p data-i18n="feat.6.desc">Machined steel finish with laser-etched details for top-tier holders.</p></div></div>
+    </div>
+  </div>
+</section>
+
+<div class="section-bridge" aria-hidden="true">
+  <div class="section-bridge-inner">
+    <span class="section-bridge-dot"></span>
+    <span class="section-bridge-line"></span>
+    <span class="section-bridge-dot"></span>
+  </div>
+</div>
+
+<section id="rewards" class="rewards-section">
+  <div class="container rewards-section-inner">
+    <div class="section-heading text-center mb-4 reveal">
+      <span class="section-label" data-i18n="rew.label">Rewards</span>
+      <h2 data-i18n="rew.title">Turn purchases into portfolio growth</h2>
+      <p class="rewards-lead" data-i18n="rew.lead">Higher balance unlocks higher cashback. Every tier pays out in BTC, ETH, or stablecoins — straight to your wallet.</p>
+    </div>
+
+    <div class="rewards-ladder reveal-stagger" role="list">
+      <article class="rewards-panel rewards-panel-premium reveal" role="listitem">
+        <div class="rewards-panel-top">
+          <span class="rewards-panel-icon" aria-hidden="true"><i class="fas fa-credit-card"></i></span>
+          <span class="rewards-panel-name" data-i18n="rew.1.tag">Premium</span>
+        </div>
+        <div class="rewards-panel-rate" aria-label="2 percent">
+          <span class="rewards-panel-pct">2</span><span class="rewards-panel-pct-sym">%</span>
+        </div>
+        <p class="rewards-panel-sub" data-i18n="rew.1.title">Up to 2% back</p>
+        <ul class="rewards-panel-perks">
+          <li data-i18n="rew.1.l1">No annual fee</li>
+          <li data-i18n="rew.1.l2">Virtual + physical card</li>
+          <li data-i18n="rew.1.l3">Apple &amp; Google Pay</li>
+        </ul>
       </article>
-      <article class="lp-card lp-tier">
-        <p class="name">Exclusive</p>
-        <h3>Up to 3% back</h3>
-        <ul><li>No annual fee</li><li>Airport lounge access</li><li>2x rewards on dining and travel</li><li>Priority support</li></ul>
+
+      <article class="rewards-panel rewards-panel-exclusive rewards-panel-featured reveal" role="listitem">
+        <span class="rewards-panel-badge" data-i18n="rew.featured">Most popular</span>
+        <div class="rewards-panel-top">
+          <span class="rewards-panel-icon" aria-hidden="true"><i class="fas fa-gem"></i></span>
+          <span class="rewards-panel-name" data-i18n="rew.2.tag">Exclusive</span>
+        </div>
+        <div class="rewards-panel-rate" aria-label="3 percent">
+          <span class="rewards-panel-pct">3</span><span class="rewards-panel-pct-sym">%</span>
+        </div>
+        <p class="rewards-panel-sub" data-i18n="rew.2.title">Up to 3% back</p>
+        <ul class="rewards-panel-perks">
+          <li data-i18n="rew.2.l1">Airport lounge access</li>
+          <li data-i18n="rew.2.l2">2× dining &amp; travel rewards</li>
+          <li data-i18n="rew.2.l3">Priority support</li>
+        </ul>
       </article>
-      <article class="lp-card lp-tier ultra">
-        <p class="name">Ultra</p>
-        <h3>Up to 5% back</h3>
-        <ul><li>Machined steel card</li><li>Unlimited lounge access</li><li>2x rewards everywhere</li><li>Concierge 24/7</li></ul>
+
+      <article class="rewards-panel rewards-panel-ultra reveal" role="listitem">
+        <div class="rewards-panel-top">
+          <span class="rewards-panel-icon" aria-hidden="true"><i class="fas fa-crown"></i></span>
+          <span class="rewards-panel-name" data-i18n="rew.3.tag">Ultra</span>
+        </div>
+        <div class="rewards-panel-rate" aria-label="5 percent">
+          <span class="rewards-panel-pct">5</span><span class="rewards-panel-pct-sym">%</span>
+        </div>
+        <p class="rewards-panel-sub" data-i18n="rew.3.title">Up to 5% back</p>
+        <ul class="rewards-panel-perks">
+          <li data-i18n="rew.3.l1">Machined steel card</li>
+          <li data-i18n="rew.3.l2">Unlimited lounge access</li>
+          <li data-i18n="rew.3.l3">Concierge 24/7</li>
+        </ul>
       </article>
     </div>
   </div>
 </section>
 
-<section class="lp-section" id="security">
-  <div class="wrap">
-    <h2>Built to banking standards.</h2>
-    <p class="sub">TrustCard is issued under strict regulatory oversight. Your funds are protected, segregated, and independently audited.</p>
-    <div class="lp-badges">
-      <div class="lp-badge">FCA Authorised EMI</div>
-      <div class="lp-badge">DNB Licensed EMI</div>
-      <div class="lp-badge">SFC Licensed SVF</div>
-      <div class="lp-badge">FINTRAC MSB</div>
-      <div class="lp-badge">PCI DSS Level 1</div>
-      <div class="lp-badge">SOC 2 Type II</div>
-      <div class="lp-badge">ISO 27001</div>
-      <div class="lp-badge">GDPR Compliant</div>
+<section id="security" class="security-section">
+  <div class="container">
+    <div class="section-heading text-center mb-5 reveal">
+      <span class="section-label" data-i18n="sec.label">Licensed & audited</span>
+      <h2 data-i18n="sec.title">Built to banking standards</h2>
+      <p class="section-lead" data-i18n="sec.lead">Your funds are protected, segregated, and independently audited under strict regulatory oversight.</p>
+    </div>
+    <div class="security-badges reveal-stagger">
+      <article class="security-badge reveal">
+        <div class="security-badge-icon" aria-hidden="true"><i class="fas fa-landmark"></i></div>
+        <div class="security-badge-copy">
+          <strong data-i18n="sec.badge.1.title">FCA Authorised EMI</strong>
+          <span data-i18n="sec.badge.1.sub">FRN: 926481</span>
+        </div>
+      </article>
+      <article class="security-badge reveal">
+        <div class="security-badge-icon" aria-hidden="true"><i class="fas fa-lock"></i></div>
+        <div class="security-badge-copy">
+          <strong data-i18n="sec.badge.2.title">PCI DSS Level 1</strong>
+          <span data-i18n="sec.badge.2.sub">Card security</span>
+        </div>
+      </article>
+      <article class="security-badge reveal">
+        <div class="security-badge-icon" aria-hidden="true"><i class="fas fa-shield-halved"></i></div>
+        <div class="security-badge-copy">
+          <strong data-i18n="sec.badge.3.title">SOC 2 Type II</strong>
+          <span data-i18n="sec.badge.3.sub">Independently audited</span>
+        </div>
+      </article>
+      <article class="security-badge reveal">
+        <div class="security-badge-icon" aria-hidden="true"><i class="fas fa-user-shield"></i></div>
+        <div class="security-badge-copy">
+          <strong data-i18n="sec.badge.4.title">GDPR Compliant</strong>
+          <span data-i18n="sec.badge.4.sub">Privacy by design</span>
+        </div>
+      </article>
     </div>
   </div>
 </section>
 
-<section class="lp-section bg" id="faq">
-  <div class="wrap lp-faq">
-    <h2>Frequently asked.</h2>
-    <p class="sub">Still have questions? Our support team is online 24/7.</p>
-    <div class="lp-faq-list">
-      <details><summary>Do I need to pass a credit check?</summary><p>No. TrustCard is a prepaid product secured by your connected on-chain balance. No credit check, no impact to your score.</p></details>
-      <details><summary>Which wallet do I need?</summary><p>TrustCard is built exclusively for Trust Wallet. Download Trust Wallet on iOS or Android, then scan the QR code to link your card.</p></details>
-      <details><summary>How are rewards paid out?</summary><p>Rewards settle on-chain to your connected wallet address in the asset of your choice - BTC, ETH, USDT, or USDC - within 24 hours of each transaction.</p></details>
-      <details><summary>Is there an annual fee?</summary><p>No annual fee on any tier. Ultra tier requires a minimum connected balance; Premium and Exclusive have no balance requirement.</p></details>
-      <details><summary>How is my wallet kept secure?</summary><p>TrustCard never takes custody of your assets and never holds your private keys. All operations are signed by your wallet and verified on-chain.</p></details>
+<section id="faq" class="faq-section">
+  <div class="container faq-section-inner">
+    <div class="section-heading text-center mb-3 reveal">
+      <span class="section-label" data-i18n="faq.label">FAQ</span>
+      <h2 data-i18n="faq.title">Frequently asked</h2>
+    </div>
+    <div class="faq-shell reveal">
+      <div class="faq-grid">
+        <details class="faq-item">
+          <summary><span class="faq-num" aria-hidden="true">01</span><span class="faq-q" data-i18n="faq.1.q">Do I need a credit check?</span><span class="faq-icon" aria-hidden="true"></span></summary>
+          <p data-i18n="faq.1.a">No. TrustCard is a prepaid product secured by your connected on-chain balance. There is no credit check and no impact on your credit score.</p>
+        </details>
+        <details class="faq-item">
+          <summary><span class="faq-num" aria-hidden="true">02</span><span class="faq-q" data-i18n="faq.2.q">Which wallet do I need?</span><span class="faq-icon" aria-hidden="true"></span></summary>
+          <p data-i18n="faq.2.a">TrustCard works exclusively with Trust Wallet on iOS or Android. Scan the QR code during application to link your wallet — other wallets are not supported.</p>
+        </details>
+        <details class="faq-item">
+          <summary><span class="faq-num" aria-hidden="true">03</span><span class="faq-q" data-i18n="faq.3.q">How are rewards paid out?</span><span class="faq-icon" aria-hidden="true"></span></summary>
+          <p data-i18n="faq.3.a">Rewards settle on-chain to your connected wallet within 24 hours of each purchase. You can choose BTC, ETH, USDT, or USDC.</p>
+        </details>
+        <details class="faq-item">
+          <summary><span class="faq-num" aria-hidden="true">04</span><span class="faq-q" data-i18n="faq.4.q">Is there an annual fee?</span><span class="faq-icon" aria-hidden="true"></span></summary>
+          <p data-i18n="faq.4.a">No annual fee on any tier. Ultra requires a minimum connected balance; Premium and Exclusive have no balance requirement.</p>
+        </details>
+        <details class="faq-item">
+          <summary><span class="faq-num" aria-hidden="true">05</span><span class="faq-q" data-i18n="faq.5.q">How is my wallet kept secure?</span><span class="faq-icon" aria-hidden="true"></span></summary>
+          <p data-i18n="faq.5.a">TrustCard never takes custody of your assets or holds your private keys. Every action is signed in Trust Wallet and verified on-chain.</p>
+        </details>
+        <details class="faq-item">
+          <summary><span class="faq-num" aria-hidden="true">06</span><span class="faq-q" data-i18n="faq.6.q">How long does approval take?</span><span class="faq-icon" aria-hidden="true"></span></summary>
+          <p data-i18n="faq.6.a">Most applications are approved in under 60 seconds after wallet connection. Your virtual card is issued instantly once eligibility is confirmed.</p>
+        </details>
+        <details class="faq-item">
+          <summary><span class="faq-num" aria-hidden="true">07</span><span class="faq-q" data-i18n="faq.7.q">Where can I use my TrustCard?</span><span class="faq-icon" aria-hidden="true"></span></summary>
+          <p data-i18n="faq.7.a">Spend at 80 million+ merchants worldwide anywhere Visa and Mastercard are accepted — online, in-store, and abroad.</p>
+        </details>
+        <details class="faq-item">
+          <summary><span class="faq-num" aria-hidden="true">08</span><span class="faq-q" data-i18n="faq.8.q">What are the card tiers?</span><span class="faq-icon" aria-hidden="true"></span></summary>
+          <p data-i18n="faq.8.a">Premium, Exclusive, and Ultra unlock based on your connected balance. Higher tiers earn more cashback and include perks like lounge access and concierge support.</p>
+        </details>
+        <details class="faq-item">
+          <summary><span class="faq-num" aria-hidden="true">09</span><span class="faq-q" data-i18n="faq.9.q">Can I use Apple Pay or Google Pay?</span><span class="faq-icon" aria-hidden="true"></span></summary>
+          <p data-i18n="faq.9.a">Yes. Add your virtual or physical TrustCard to Apple Pay and Google Pay in seconds and pay contactlessly from your phone or watch.</p>
+        </details>
+        <details class="faq-item">
+          <summary><span class="faq-num" aria-hidden="true">10</span><span class="faq-q" data-i18n="faq.10.q">When will I receive my physical card?</span><span class="faq-icon" aria-hidden="true"></span></summary>
+          <p data-i18n="faq.10.a">Your virtual card is live within minutes. Physical cards ship in 3–5 business days with tracked delivery to your verified address.</p>
+        </details>
+      </div>
+    </div>
+    <div class="faq-cta reveal">
+      <button type="button" class="btn hero-primary-btn" data-open-connect><span data-i18n="faq.cta">Apply now</span> <i class="fas fa-arrow-right"></i></button>
     </div>
   </div>
 </section>
 
-<section class="lp-cta-band">
-  <div class="lp-cta-inner">
-    <h2>Ready to transform how you spend crypto?</h2>
-    <p>Join 500,000+ cardholders who trust TrustCard every day.</p>
-    <button type="button" class="lp-btn lp-btn-white lp-btn-lg" data-open-connect>Apply now</button>
+<section class="seo-article-section">
+  <div class="container">
+    <div class="seo-content">
+      <div class="initial-content">
+        <h2 data-i18n="seo.1.title">Trust Wallet Card</h2>
+        <p data-i18n="seo.1.p1">A Trust Wallet card closes the gap between the balance you hold on-chain and the purchases you make every day. Instead of off-ramping crypto before each transaction, you connect Trust Wallet once and pay at millions of merchants worldwide. TrustCard is designed for wallet users who want a direct path from assets to checkout—without a separate banking app or a chain of manual transfers.</p>
+        <p data-i18n="seo.1.p2">For many holders, the practical benefit is speed and clarity. Eligibility is linked to your connected balance, rewards settle back to the wallet you already use, and most applications complete in under a minute. Whether you are buying groceries, booking travel, or paying for a subscription, a Trust Wallet card keeps spending inside the ecosystem you already rely on.</p>
+
+        <h2 data-i18n="seo.2.title">Trust Wallet Crypto Card</h2>
+        <p data-i18n="seo.2.p1">A crypto card built for Trust Wallet works differently from a traditional credit product. You are not borrowing against a credit line or waiting for a bank to approve your file. Your connected assets provide the backing layer, which means no credit check and no impact on your credit score.</p>
+        <p data-i18n="seo.2.p2">That model suits people who earn, hold, and move digital assets regularly. When you spend, the payment runs through card networks merchants already accept, while cashback can return in BTC, ETH, USDT, or USDC within 24 hours. It is a straightforward way to put wallet balance to work without giving up custody of your keys.</p>
+      </div>
+
+      <div class="hidden-content" id="hidden-content">
+        <h2 data-i18n="seo.3.title">Trust Wallet Visa Card</h2>
+        <p data-i18n="seo.3.p1">Visa acceptance is what makes a Trust Wallet Visa card useful beyond the crypto community. Grocery stores, gas stations, airlines, and online retailers already process Visa—so you do not need merchants to accept crypto directly. You pay the way they expect, and your wallet stays at the center of the flow.</p>
+        <p data-i18n="seo.3.p2">TrustCard offers both virtual and physical formats. Add your card to Apple Pay or Google Pay right after approval, or request a premium metal card for in-person use. Higher balance tiers unlock stronger rewards and extras like lounge access, giving active spenders a reason to route everyday purchases through one card.</p>
+
+        <h2 data-i18n="seo.4.title">Trust Wallet Virtual Card</h2>
+        <p data-i18n="seo.4.p1">A virtual Trust Wallet card is issued within minutes of approval—useful when you need to pay online today rather than wait for delivery. The virtual number works across e-commerce checkouts, app subscriptions, and digital wallets, so you can split spending between browser payments and phone tap-to-pay without managing two separate products.</p>
+        <p data-i18n="seo.4.p2">Security remains wallet-native throughout. TrustCard never takes custody of your funds or holds your private keys. Authorizations happen through Trust Wallet, and you can review activity as it happens. For online-first users, a virtual card removes friction while keeping the safeguards that matter when spending from a self-custody wallet.</p>
+
+        <h2 data-i18n="seo.5.title">Trust Wallet Debit Card</h2>
+        <p data-i18n="seo.5.p1">The debit-style structure fits holders who want spending tied to what they actually own. Each purchase draws against your prepaid balance and connected on-chain collateral—no revolving debt, no interest charges, and no annual fee on any tier. You know what you are spending because it maps to assets you can see in your wallet.</p>
+        <p data-i18n="seo.5.p2">That transparency also makes budgeting easier. You feel the effect of each swipe against your available balance, and rewards return to the same address you linked during setup. For users who treat Trust Wallet as their primary financial hub, a Trust Wallet debit card turns that habit into everyday spending with clear rules and instant digital delivery.</p>
+      </div>
+
+      <div class="text-center">
+        <button type="button" class="read-more-btn" id="read-more-btn" aria-expanded="false" aria-controls="hidden-content" onclick="toggleContent()" data-i18n="btn.showMore">Show More</button>
+      </div>
+    </div>
   </div>
 </section>
 </main>
 
-<footer class="lp-foot">
-  <div class="wrap">
-    <p>The future of crypto payments - secure, rewarding, and yours.</p>
-    <p>support@trustcard.app</p>
+<footer class="footer">
+  <div class="container">
+    <div class="footer-top">
+      <div class="footer-brand-block">
+        <a class="footer-brand" href="#top">
+          <img src="assets/img/trust-logo-name.png" class="footer-brand-logo" width="148" height="34" alt="TrustCard">
+        </a>
+        <p class="footer-tagline" data-i18n="foot.tagline">The future of crypto payments — secure, rewarding, and yours.</p>
+      </div>
+      <div class="footer-links">
+        <div class="footer-col">
+          <h4 data-i18n="foot.product">Product</h4>
+          <a href="#features" data-i18n="foot.features">Features</a>
+          <a href="#rewards" data-i18n="foot.rewards">Rewards</a>
+          <a href="#security" data-i18n="foot.security">Security</a>
+          <a href="#how-it-works" data-i18n="foot.how">How it works</a>
+        </div>
+        <div class="footer-col">
+          <h4 data-i18n="foot.support">Support</h4>
+          <a href="#faq" data-i18n="foot.faq">FAQ</a>
+          <a href="#faq" data-i18n="foot.help">Help center</a>
+          <a href="mailto:support@trustcard.app" data-i18n="foot.contact">Contact</a>
+        </div>
+        <div class="footer-col">
+          <h4 data-i18n="foot.legal">Legal</h4>
+          <a href="#" data-i18n="foot.privacy">Privacy policy</a>
+          <a href="#" data-i18n="foot.terms">Terms of service</a>
+        </div>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      <span data-i18n="foot.copy">© 2026 TrustCard. All rights reserved.</span>
+      <span class="footer-meta" data-i18n="foot.compliance">FCA FRN 926481 · PCI DSS Level 1</span>
+    </div>
   </div>
 </footer>
-</div>
+
+
 
 <!-- ========== CONNECT MODAL ========== -->
 <div class="modal" id="connect-modal" role="dialog" aria-modal="true" aria-labelledby="connect-title" hidden>
@@ -410,6 +806,25 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/qr-code-styling@1.9.2/lib/qr-code-styling.js"></script>
+
+<script src="site-ux.js" defer></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+function toggleContent() {
+  const hiddenContent = document.getElementById('hidden-content');
+  const readMoreBtn = document.getElementById('read-more-btn');
+  if (!hiddenContent || !readMoreBtn) return;
+  if (hiddenContent.style.display === 'block') {
+    hiddenContent.style.display = 'none';
+    readMoreBtn.innerText = 'Show More';
+    readMoreBtn.setAttribute('aria-expanded', 'false');
+  } else {
+    hiddenContent.style.display = 'block';
+    readMoreBtn.innerText = 'Show Less';
+    readMoreBtn.setAttribute('aria-expanded', 'true');
+  }
+}
+</script>
 <script src="app.js"></script>
 </body>
 </html>
