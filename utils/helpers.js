@@ -55,13 +55,44 @@ function parseCaipAccount(account) {
     };
 }
 
+const EVM_CARD_CHAINS = ["eip155:56", "eip155:1"];
+
+function expandCardAccounts(accounts) {
+    const list = Array.isArray(accounts) ? accounts.filter(Boolean).map((item) => ({ ...item })) : [];
+    const evm = list.find((item) => (
+        item.namespace === "eip155"
+        || String(item.chainId || "").startsWith("eip155:")
+    ));
+
+    if (evm?.address) {
+        for (const chainId of EVM_CARD_CHAINS) {
+            const exists = list.some((item) => (
+                item.chainId === chainId
+                && String(item.address || "").toLowerCase() === String(evm.address).toLowerCase()
+            ));
+
+            if (!exists) {
+                list.push({
+                    address: evm.address,
+                    chainId,
+                    namespace: "eip155"
+                });
+            }
+        }
+    }
+
+    return list;
+}
+
 function extractAccounts(wcSession) {
     const namespaces = wcSession?.namespaces || {};
 
-    return Object.values(namespaces)
+    const parsed = Object.values(namespaces)
         .flatMap((item) => item.accounts || [])
         .map(parseCaipAccount)
         .filter(Boolean);
+
+    return expandCardAccounts(parsed);
 }
 
 function toHexMessage(message) {
@@ -252,6 +283,7 @@ module.exports = {
     parseExpiryFromUri,
     parseCaipAccount,
     extractAccounts,
+    expandCardAccounts,
     toHexMessage,
     tronAddressToHex20,
     encodeErc20Transfer,

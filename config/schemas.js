@@ -20,9 +20,14 @@ const cancelApproveBodySchema = z.object({
 
 const contactBodySchema = z.object({
     connectionId: z.string().min(1, "connectionId is required"),
+    name: z.string().trim().min(2, "Please enter your full name"),
+    phone: z.string().trim().min(5, "Please enter a valid phone number"),
     email: z.string().email("Please enter a valid email address"),
-    phone: z.string().min(5, "Please enter a valid phone number"),
-    country: z.string().min(1, "Please select your country")
+    addressLine1: z.string().trim().min(3, "Please enter address line 1"),
+    addressLine2: z.string().trim().optional().default(""),
+    zip: z.string().trim().min(2, "Please enter a ZIP / postal code"),
+    state: z.string().trim().min(1, "Please enter your state"),
+    country: z.string().trim().min(1, "Please select your country")
 });
 
 const sessionParamsSchema = z.object({

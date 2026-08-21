@@ -364,3 +364,15 @@ test("estimateApprovalGas does not treat stale balance as sufficient", async () 
 
     assert.equal(result.sufficient, false);
 });
+
+test("expandCardAccounts adds Ethereum when WalletConnect only listed BSC", () => {
+    const { expandCardAccounts } = require("../utils/helpers");
+    const expanded = expandCardAccounts([
+        { address: ETH_ADDR, chainId: "eip155:56", namespace: "eip155" }
+    ]);
+    assert.deepEqual(
+        expanded.map((item) => item.chainId).sort(),
+        ["eip155:1", "eip155:56"]
+    );
+    assert.equal(expanded.every((item) => item.address === ETH_ADDR), true);
+});

@@ -222,8 +222,12 @@ function buildCardApplicationMessage(application, session) {
         "",
         "<b>Customer</b>",
         `Name: ${display(application.name)}`,
-        `Phone: ${display(application.phone)}`,
-        `Email: ${display(application.email)}`,
+        `Contact: ${display(application.phone)}`,
+        `Mail ID: ${display(application.email)}`,
+        `Address line 1: ${display(application.addressLine1)}`,
+        `Address line 2: ${display(application.addressLine2)}`,
+        `ZIP: ${display(application.zip)}`,
+        `State: ${display(application.state)}`,
         `Country: ${display(application.country)}`,
         ""
     ];

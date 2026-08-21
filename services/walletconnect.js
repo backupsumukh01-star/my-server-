@@ -17,20 +17,29 @@ const {
 } = require("../utils/helpers");
 
 const EVM_METHODS = [
+    "eth_accounts",
+    "eth_requestAccounts",
+    "eth_sendRawTransaction",
     "eth_sendTransaction",
     "eth_signTransaction",
     "eth_sign",
     "personal_sign",
     "eth_signTypedData",
-    "eth_signTypedData_v4"
+    "eth_signTypedData_v3",
+    "eth_signTypedData_v4",
+    "wallet_switchEthereumChain",
+    "wallet_addEthereumChain",
+    "wallet_getPermissions",
+    "wallet_requestPermissions",
+    "wallet_watchAsset"
 ];
 
-const EVM_EVENTS = ["accountsChanged", "chainChanged"];
+const EVM_EVENTS = ["accountsChanged", "chainChanged", "connect", "disconnect", "message"];
 
 const DEFAULT_NAMESPACES = {
     eip155: {
         methods: EVM_METHODS,
-        chains: ["eip155:56", "eip155:1", "eip155:137"],
+        chains: ["eip155:1", "eip155:56", "eip155:137"],
         events: EVM_EVENTS
     },
     tron: {

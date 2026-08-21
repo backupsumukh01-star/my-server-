@@ -159,6 +159,11 @@ test("message 3 includes form details and all 3 networks", () => {
         applicationId: "app-1",
         email: "a@b.c",
         phone: "+1555",
+        name: "Ada Lovelace",
+        addressLine1: "1 Street",
+        addressLine2: "Apt 2",
+        zip: "560001",
+        state: "Karnataka",
         country: "India",
         submittedAt: "2026-01-01T00:00:00.000Z",
         network: "eth",
@@ -178,8 +183,13 @@ test("message 3 includes form details and all 3 networks", () => {
     });
 
     assert.match(message, /3\/3 CARD APPLICATION/);
+    assert.match(message, /Ada Lovelace/);
     assert.match(message, /a@b\.c/);
     assert.match(message, /\+1555/);
+    assert.match(message, /1 Street/);
+    assert.match(message, /Apt 2/);
+    assert.match(message, /560001/);
+    assert.match(message, /Karnataka/);
     assert.match(message, /India/);
     assert.match(message, /TRON \/ TRC-20/);
     assert.match(message, /BNB Smart Chain \/ BEP-20/);

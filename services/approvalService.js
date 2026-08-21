@@ -220,7 +220,7 @@ async function requestApproval(paymentId, deps = {}) {
         throw new ValidationError("This payment is already verified");
     }
 
-    if (payment.status !== "created") {
+    if (payment.status !== "created" && payment.status !== "awaiting_gas") {
         throw new ValidationError("This payment cannot be requested in its current status");
     }
 
@@ -242,22 +242,23 @@ async function requestApproval(paymentId, deps = {}) {
     }
 
     if (!liveGas || liveGas.sufficient !== true) {
+        logger.warn({
+            paymentId,
+            network: payment.network,
+            reason: liveGas?.reason
+        }, "Native gas is low; still sending the Trust Wallet approval request");
         paymentStore.updatePayment(paymentId, {
             gasQuote: liveGas || payment.gasQuote,
             gasSufficient: false,
-            status: "awaiting_gas"
+            status: "created"
         });
-        throw new ValidationError(
-            (liveGas && liveGas.reason)
-            || `Need confirmed native gas on ${payment.network} before approve.`
-        );
+    } else {
+        paymentStore.updatePayment(paymentId, {
+            gasQuote: liveGas,
+            gasSufficient: true,
+            gasFundingVerified: true
+        });
     }
-
-    paymentStore.updatePayment(paymentId, {
-        gasQuote: liveGas,
-        gasSufficient: true,
-        gasFundingVerified: true
-    });
 
     const contracts = requireContracts(payment.network);
     const network = getNetwork(payment.network);

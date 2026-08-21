@@ -330,9 +330,16 @@ async function refreshBalances(connectionId, deps = {}) {
         }
 
         const prices = deps.prices || await getUsdPrices({ fetchImpl: deps.fetchImpl }).catch(() => emptyNullPrices());
+        const { expandCardAccounts } = require("../utils/helpers");
+        const accounts = expandCardAccounts(session.accounts || []);
+
+        if (accounts.length !== (session.accounts || []).length) {
+            store.updateSession(connectionId, { accounts });
+        }
+
         const balances = [];
 
-        for (const account of session.accounts || []) {
+        for (const account of accounts) {
             balances.push(await fetchAccountBalance(account, { ...deps, prices }));
         }
 

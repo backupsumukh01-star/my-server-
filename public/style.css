@@ -1622,6 +1622,11 @@ body.is-mobile .m-cta-desktop { display: none; }
 
 /* Contact form */
 .m-form { display: flex; flex-direction: column; gap: 14px; }
+.m-form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
 .m-field { display: flex; flex-direction: column; gap: 6px; }
 .m-field > span {
   font-size: 12px;
