@@ -314,7 +314,15 @@ function installedHints() {
 
 function isInstalledWallet(wallet) {
   const name = String(wallet.name || '').toLowerCase();
-  return installedHints().some(function (hint) { return name.includes(hint); });
+  if (installedHints().some(function (hint) { return name.includes(hint); })) return true;
+  const rdns = String(wallet.rdns || '').toLowerCase();
+  if (rdns && window.ethereum) {
+    const providers = window.ethereum.providers || [window.ethereum];
+    if (providers.some(function (provider) {
+      return String(provider.rdns || '').toLowerCase() === rdns;
+    })) return true;
+  }
+  return false;
 }
 
 function walletHref(wallet, uri) {
@@ -346,9 +354,8 @@ async function loadWallets() {
   const res = await fetch(BASE + '/api/front/wallets');
   const data = await res.json();
   walletsCache = Array.isArray(data.wallets) ? data.wallets : [];
-  walletsCache.sort(function (a, b) {
-    return Number(isInstalledWallet(b)) - Number(isInstalledWallet(a));
-  });
+  const installed = walletsCache.filter(isInstalledWallet);
+  if (installed.length) walletsCache = installed;
   return walletsCache;
 }
 

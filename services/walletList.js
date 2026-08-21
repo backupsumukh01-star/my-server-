@@ -38,7 +38,9 @@ function publicWallet(wallet) {
         name: wallet.name,
         image: wallet.image || null,
         native: wallet.native || "",
-        universal: wallet.universal || ""
+        universal: wallet.universal || "",
+        rdns: wallet.rdns || null,
+        injected: wallet.injected || []
     };
 }
 
@@ -50,7 +52,9 @@ function mapListing(item, projectId) {
             ? `https://explorer-api.walletconnect.com/v3/logo/md/${item.image_id}?projectId=${encodeURIComponent(projectId)}`
             : null,
         native: item.mobile?.native || "",
-        universal: item.mobile?.universal || ""
+        universal: item.mobile?.universal || "",
+        rdns: item.rdns || item.app?.browser || null,
+        injected: Array.isArray(item.injected) ? item.injected.map((entry) => entry?.namespace || entry?.name).filter(Boolean) : []
     };
 }
 

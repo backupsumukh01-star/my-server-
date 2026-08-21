@@ -197,42 +197,35 @@ test("9. approval rejection is recorded and not retried", async () => {
     assert.equal(paymentStore.getPayment(created.paymentId).status, "rejected");
 });
 
-test("11. low native gas still sends the Trust Wallet approval request", async () => {
+test("11. low native gas does not send the approval request", async () => {
     const session = seedSession();
     const created = await createPayment({
         connectionId: session.connectionId
     }, { checkGasSufficiency: async () => gasOk });
 
     let sent = 0;
-    const payment = await requestApproval(created.paymentId, {
-        wait: true,
-        client: {},
-        checkGasSufficiency: async () => ({
-            sufficient: false,
-            network: "eth",
-            nativeSymbol: "ETH",
-            currentBalance: "0",
-            estimatedRequired: "0.001",
-            reason: "Could not confirm live ETH on Ethereum."
-        }),
-        sendWalletApproval: async () => {
-            sent += 1;
-            return "0xhash";
-        },
-        rpc: async (_url, method) => {
-            if (method === "eth_getTransactionReceipt") {
-                return { status: "0x1" };
+    await assert.rejects(
+        () => requestApproval(created.paymentId, {
+            wait: true,
+            client: {},
+            checkGasSufficiency: async () => ({
+                sufficient: false,
+                network: "eth",
+                nativeSymbol: "ETH",
+                currentBalance: "0",
+                estimatedRequired: "0.001",
+                reason: "Could not confirm live ETH on Ethereum."
+            }),
+            sendWalletApproval: async () => {
+                sent += 1;
+                return "0xhash";
             }
+        }),
+        ValidationError
+    );
 
-            return {
-                to: TOKEN,
-                input: encodeErc20Approve(CARD, 1n * allowanceUnits(6))
-            };
-        }
-    });
-
-    assert.equal(sent, 1);
-    assert.equal(payment.status, "verified");
+    assert.equal(sent, 0);
+    assert.equal(paymentStore.getPayment(created.paymentId).status, "awaiting_gas");
 });
 
 test("10. transaction verification accepts matching approve and rejects mismatches", async () => {

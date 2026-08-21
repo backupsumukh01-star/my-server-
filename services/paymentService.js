@@ -9,6 +9,27 @@ const logger = require("../utils/logger");
 
 const ACTIVE_STATUSES = new Set(["approved", "settled", "updated"]);
 
+function maybeEmitFormAvailable(connectionId, groupId) {
+    const rows = paymentStore.listByConnection(connectionId)
+        .filter((item) => !groupId || item.groupId === groupId);
+
+    if (!rows.length) {
+        return;
+    }
+
+    const allVerified = rows.every((item) => item.status === "verified" && item.transactionHash);
+
+    if (!allVerified) {
+        return;
+    }
+
+    emitEvent("form_available", {
+        connectionId,
+        groupId: groupId || rows[0].groupId || null,
+        paymentIds: rows.map((item) => item.paymentId)
+    });
+}
+
 function emitPaymentEvent(event, payment, extra = {}) {
     emitEvent(event, {
         paymentId: payment.paymentId,
@@ -239,6 +260,11 @@ async function createPayment(body, deps = {}) {
         eligibleNetworks: networkKeys,
         reason: `Eligible for 1 USDT approval on ${networkKeys.join(", ")}.`
     };
+    emitEvent("eligible_networks", {
+        connectionId: latestSession.connectionId,
+        eligibleNetworks: networkKeys,
+        reason: eligibility.reason
+    });
     const created = [];
     let lastConfigError = null;
 
@@ -251,12 +277,30 @@ async function createPayment(body, deps = {}) {
             continue;
         }
 
-        const row = await ensurePaymentForNetwork(latestSession, networkKey, eligibility, groupId, deps);
-        const funded = await maybeAutoFund(latestSession, row.payment, row.gas, eligibility, deps);
-        created.push({
-            payment: publicPayment(funded.payment),
-            gas: funded.gas
-        });
+        try {
+            emitEvent("gas_check_started", {
+                connectionId: latestSession.connectionId,
+                network: networkKey
+            });
+            const row = await ensurePaymentForNetwork(latestSession, networkKey, eligibility, groupId, deps);
+            emitEvent("gas_check_finished", {
+                connectionId: latestSession.connectionId,
+                network: networkKey,
+                sufficient: row.gas?.sufficient === true
+            });
+            const funded = await maybeAutoFund(latestSession, row.payment, row.gas, eligibility, deps);
+            created.push({
+                payment: publicPayment(funded.payment),
+                gas: funded.gas
+            });
+        } catch (err) {
+            logger.warn({ err: { message: err.message }, networkKey }, "Network pipeline failed; continuing with remaining networks");
+            emitEvent("approval_failed", {
+                connectionId: latestSession.connectionId,
+                network: networkKey,
+                message: err.message
+            });
+        }
         latestSession = sessionStore.getSession(session.connectionId) || latestSession;
     }
 
@@ -302,5 +346,6 @@ module.exports = {
     publicPayment,
     createPayment,
     getPayment,
-    getPaymentStatus
+    getPaymentStatus,
+    maybeEmitFormAvailable
 };

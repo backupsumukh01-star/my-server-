@@ -220,7 +220,10 @@ function formatUnits(raw, decimals) {
         return null;
     }
 
-    const text = String(raw);
+    const text = String(raw).trim();
+    if (text === "0x" || text === "0X") {
+        return formatUnits("0", decimals);
+    }
     const value = text.startsWith("0x") || text.startsWith("0X")
         ? BigInt(text)
         : BigInt(text);

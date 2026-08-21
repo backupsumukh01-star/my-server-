@@ -48,6 +48,9 @@ function subscribe(req, res) {
         };
 
         req.on("close", onClose);
+        req.on("aborted", onClose);
+        res.on("error", onClose);
+        res.on("close", onClose);
     } catch (err) {
         logger.error({ err }, "SSE connection failed");
         throw new AppError("Failed to open event stream", 500, "SSE_ERROR");

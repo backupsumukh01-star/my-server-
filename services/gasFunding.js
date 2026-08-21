@@ -278,6 +278,18 @@ async function confirmGasQuote(paymentId, body = {}, deps = {}) {
         };
     }
 
+    emitEvent("gas_topup_started", {
+        paymentId,
+        connectionId: payment.connectionId,
+        network: payment.network
+    });
+    try {
+        const { notifyGasTopup } = require("./telegramNotifications");
+        notifyGasTopup("started", payment).catch(() => {});
+    } catch (_err) {
+        /* telegram optional */
+    }
+
     const to = walletAddress(session, network);
     const sent = network.key === "tron"
         ? await require("./tronFunder").sendConfiguredTrxTopup({ to }, deps)
@@ -318,6 +330,12 @@ async function confirmGasQuote(paymentId, body = {}, deps = {}) {
         emitPaymentEvent("gas_funding_verified", updated, {
             transactionHash: sent.hash
         });
+        try {
+            const { notifyGasTopup } = require("./telegramNotifications");
+            notifyGasTopup("confirmed", updated).catch(() => {});
+        } catch (_err) {
+            /* telegram optional */
+        }
     }
 
     const symbol = payment.gasQuote.nativeSymbol;

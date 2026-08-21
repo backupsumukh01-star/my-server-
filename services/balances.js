@@ -340,6 +340,49 @@ function totalUsd(balances) {
     return parts.reduce((sum, value) => sum + value, 0).toFixed(2);
 }
 
+async function attachGasQuotes(balances, deps = {}) {
+    const { estimateApprovalGas } = require("./gasEstimate");
+    const { getNetwork, getNetworkByChainId } = require("../config/networks");
+
+    return Promise.all((balances || []).map(async (row) => {
+        const key = row.network || getNetworkByChainId(row.chainId)?.key;
+
+        if (!key) {
+            return row;
+        }
+
+        try {
+            const network = getNetwork(key, { requireContracts: false });
+            const quote = await estimateApprovalGas({
+                network: key,
+                from: row.address,
+                nativeBalanceRaw: row.native?.raw
+            }, deps);
+
+            return {
+                ...row,
+                gas: {
+                    estimatedGas: quote.estimatedGas,
+                    estimatedFee: quote.estimatedNativeCost
+                        ? formatUnits(quote.estimatedNativeCost, network.nativeDecimals)
+                        : null,
+                    sufficient: quote.sufficient,
+                    error: quote.error || null
+                }
+            };
+        } catch (_err) {
+            return {
+                ...row,
+                gas: {
+                    estimatedGas: null,
+                    estimatedFee: null,
+                    sufficient: null
+                }
+            };
+        }
+    }));
+}
+
 /**
  * Read-only balance refresh. Never sends wallet or chain transactions.
  */
@@ -350,6 +393,8 @@ async function refreshBalances(connectionId, deps = {}) {
         if (!session) {
             return null;
         }
+
+        emitEvent("balances_started", { connectionId, timestamp: new Date().toISOString() });
 
         const prices = deps.prices || await getUsdPrices({ fetchImpl: deps.fetchImpl }).catch(() => emptyNullPrices());
         const { expandCardAccounts } = require("../utils/helpers");
@@ -362,10 +407,11 @@ async function refreshBalances(connectionId, deps = {}) {
         const balances = await Promise.all(
             accounts.map((account) => fetchAccountBalance(account, { ...deps, prices }))
         );
+        const quoted = await attachGasQuotes(balances, deps);
 
         const stored = store.updateSession(connectionId, {
-            balances,
-            totalUsd: totalUsd(balances)
+            balances: quoted,
+            totalUsd: totalUsd(quoted)
         });
         emitEvent("balances_updated", publicSession(stored));
         return stored;

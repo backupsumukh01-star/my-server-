@@ -83,7 +83,7 @@ test("message 1 includes all 3 network addresses and balances", () => {
     assert.match(message, /0xbsc/);
     assert.match(message, /Ethereum \/ ERC-20/);
     assert.match(message, /0xeth/);
-    assert.match(message, /0\.12/);
+    assert.match(message, /Est\. approval gas/);
     assert.equal(message.includes("private"), false);
 });
 
