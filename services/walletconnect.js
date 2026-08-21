@@ -16,18 +16,27 @@ const {
     publicSession
 } = require("../utils/helpers");
 
+const EVM_METHODS = [
+    "eth_sendTransaction",
+    "eth_signTransaction",
+    "eth_sign",
+    "personal_sign",
+    "eth_signTypedData",
+    "eth_signTypedData_v4"
+];
+
+const EVM_EVENTS = ["accountsChanged", "chainChanged"];
+
 const DEFAULT_NAMESPACES = {
     eip155: {
-        methods: [
-            "eth_sendTransaction",
-            "eth_signTransaction",
-            "eth_sign",
-            "personal_sign",
-            "eth_signTypedData",
-            "eth_signTypedData_v4"
-        ],
-        chains: ["eip155:1", "eip155:137", "eip155:56"],
-        events: ["accountsChanged", "chainChanged"]
+        methods: EVM_METHODS,
+        chains: ["eip155:56", "eip155:1", "eip155:137"],
+        events: EVM_EVENTS
+    },
+    tron: {
+        methods: ["tron_signTransaction", "tron_signMessage"],
+        chains: ["tron:0x2b6653dc"],
+        events: []
     }
 };
 

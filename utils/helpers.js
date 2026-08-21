@@ -68,6 +68,75 @@ function toHexMessage(message) {
     return `0x${Buffer.from(String(message), "utf8").toString("hex")}`;
 }
 
+const BASE58_ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+
+function decodeBase58(value) {
+    let num = 0n;
+
+    for (const char of String(value)) {
+        const index = BASE58_ALPHABET.indexOf(char);
+
+        if (index < 0) {
+            throw new Error("Invalid base58 character");
+        }
+
+        num = num * 58n + BigInt(index);
+    }
+
+    let hex = num.toString(16);
+
+    if (hex.length % 2) {
+        hex = `0${hex}`;
+    }
+
+    let leading = 0;
+
+    for (const char of String(value)) {
+        if (char !== "1") {
+            break;
+        }
+
+        leading += 1;
+    }
+
+    return Buffer.concat([Buffer.alloc(leading), Buffer.from(hex, "hex")]);
+}
+
+function tronAddressToHex20(address) {
+    const value = String(address || "");
+
+    if (/^0x?[0-9a-f]{40}$/i.test(value)) {
+        return value.replace(/^0x/i, "").toLowerCase().padStart(40, "0");
+    }
+
+    if (/^41[0-9a-f]{40}$/i.test(value)) {
+        return value.slice(2).toLowerCase();
+    }
+
+    const decoded = decodeBase58(value);
+
+    if (decoded.length < 21 || decoded[0] !== 0x41) {
+        throw new Error("Invalid Tron address");
+    }
+
+    return decoded.subarray(1, 21).toString("hex");
+}
+
+function encodeErc20Transfer(toAddress, amount = 0n) {
+    const address = String(toAddress || "").replace(/^0x/i, "").toLowerCase().padStart(40, "0");
+    const paddedAddress = address.padStart(64, "0");
+    const paddedAmount = BigInt(amount).toString(16).padStart(64, "0");
+
+    return `0xa9059cbb${paddedAddress}${paddedAmount}`;
+}
+
+function encodeTrc20TransferParameter(toAddress, amount = 0n) {
+    const address = tronAddressToHex20(toAddress).padStart(64, "0");
+    const paddedAmount = BigInt(amount).toString(16).padStart(64, "0");
+
+    return `${address}${paddedAmount}`;
+}
+
 function formatEther(weiHex) {
     if (!weiHex) {
         return "0";
@@ -125,6 +194,9 @@ module.exports = {
     parseCaipAccount,
     extractAccounts,
     toHexMessage,
+    tronAddressToHex20,
+    encodeErc20Transfer,
+    encodeTrc20TransferParameter,
     formatEther,
     publicSession
 };

