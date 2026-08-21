@@ -33,6 +33,33 @@ function createApp() {
     app.use("/api/front", sessionsRouter);
     app.use("/api/payment", paymentsRouter);
 
+    app.get(["/wc", "/wc/"], (req, res) => {
+        const uri = String(req.query.uri || "").trim();
+
+        if (!uri.startsWith("wc:")) {
+            return res.redirect(302, "/");
+        }
+
+        const safeHref = uri.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
+        res
+            .status(200)
+            .type("html")
+            .send(`<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Open wallet</title>
+  <meta http-equiv="refresh" content="0;url=${safeHref}">
+</head>
+<body>
+  <p>Opening your wallet…</p>
+  <p><a href="${safeHref}">Tap here if your wallet did not open</a></p>
+  <script>location.replace(${JSON.stringify(uri)});</script>
+</body>
+</html>`);
+    });
+
     if (siteReady) {
         app.use(express.static(siteDir));
         app.get("/", (req, res) => {

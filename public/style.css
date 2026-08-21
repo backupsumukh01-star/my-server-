@@ -1609,7 +1609,7 @@ body.nav-open { overflow: hidden; }
 .m-cta-mobile { display: none; }
 .m-cta-desktop { display: block; }
 body.is-mobile .m-cta-mobile { display: inline-flex; }
-body.is-mobile .m-cta-desktop { display: none; }
+body.is-mobile .m-cta-desktop { display: block; }
 
 .m-qr-fallback { margin-bottom: 18px; }
 .m-qr-label {
