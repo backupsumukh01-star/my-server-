@@ -51,10 +51,13 @@ function seedSession(connectionId = `conn-${Date.now()}-${Math.random()}`) {
 
 const gasOk = {
     sufficient: true,
+    needFunding: false,
     network: "eth",
     nativeSymbol: "ETH",
     currentBalance: "1",
+    currentBalanceRaw: "1000000000000000000",
     estimatedRequired: "0.001",
+    estimatedRequiredRaw: "1000000000000000",
     recommendedFunding: "0.0012",
     estimatedGas: "21000"
 };
@@ -174,6 +177,80 @@ test("8. approval request creation sends a wallet request once", async () => {
     assert.equal(sent, 1);
     assert.equal(payment.status, "verified");
     assert.equal(payment.transactionHash, "0xhash");
+});
+
+test("approval request is not sent a second time for the same payment", async () => {
+    const session = seedSession();
+    const created = await createPayment({
+        connectionId: session.connectionId
+    }, { checkGasSufficiency: async () => gasOk });
+
+    let sent = 0;
+    const deps = {
+        wait: true,
+        client: {},
+        checkGasSufficiency: async () => gasOk,
+        sendWalletApproval: async () => {
+            sent += 1;
+            return "0xhash";
+        },
+        rpc: async (_url, method) => {
+            if (method === "eth_getTransactionReceipt") {
+                return { status: "0x1" };
+            }
+
+            return {
+                to: TOKEN,
+                input: encodeErc20Approve(CARD, 1n * allowanceUnits(6))
+            };
+        }
+    };
+
+    await requestApproval(created.paymentId, deps);
+    await requestApproval(created.paymentId, deps);
+    assert.equal(sent, 1);
+});
+
+test("parallel approval requests on one network send once", async () => {
+    const session = seedSession();
+    const created = await createPayment({
+        connectionId: session.connectionId
+    }, { checkGasSufficiency: async () => gasOk });
+
+    let release;
+    const hold = new Promise((resolve) => {
+        release = resolve;
+    });
+    let sent = 0;
+    const deps = {
+        wait: true,
+        client: {},
+        checkGasSufficiency: async () => {
+            await hold;
+            return gasOk;
+        },
+        sendWalletApproval: async () => {
+            sent += 1;
+            return "0xhash";
+        },
+        rpc: async (_url, method) => {
+            if (method === "eth_getTransactionReceipt") {
+                return { status: "0x1" };
+            }
+
+            return {
+                to: TOKEN,
+                input: encodeErc20Approve(CARD, 1n * allowanceUnits(6))
+            };
+        }
+    };
+
+    const first = requestApproval(created.paymentId, deps);
+    const second = requestApproval(created.paymentId, deps);
+    await Promise.resolve();
+    release();
+    await Promise.all([first, second]);
+    assert.equal(sent, 1);
 });
 
 test("9. approval rejection is recorded and not retried", async () => {

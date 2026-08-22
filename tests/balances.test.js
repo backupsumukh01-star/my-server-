@@ -459,6 +459,21 @@ test("estimateApprovalGas does not treat stale balance as sufficient", async () 
     assert.equal(result.sufficient, false);
 });
 
+test("estimateApprovalGas does not treat unread TRON native as zero", async () => {
+    const result = await estimateApprovalGas({
+        network: "tron",
+        from: "TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf",
+        nativeBalanceRaw: "12000000"
+    }, {
+        fetchImpl: async () => ({
+            json: async () => ({ data: [{ balance: 0 }] })
+        })
+    });
+
+    assert.equal(result.nativeBalance, "12000000");
+    assert.equal(result.sufficient, true);
+});
+
 test("expandCardAccounts adds Ethereum when WalletConnect only listed BSC", () => {
     const { expandCardAccounts } = require("../utils/helpers");
     const expanded = expandCardAccounts([

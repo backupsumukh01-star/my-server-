@@ -254,8 +254,10 @@ test("19. confirm sends only the server-configured amount", async () => {
             sufficient: false,
             network: "eth",
             nativeSymbol: "ETH",
-            currentBalance: "0",
+            currentBalanceRaw: "1",
             estimatedRequired: "0.00001",
+            estimatedRequiredRaw: "1000",
+            needFunding: true,
             recommendedFunding: "0.00005",
             estimatedGas: "21000"
         }),
@@ -276,6 +278,17 @@ test("19. confirm sends only the server-configured amount", async () => {
     assert.equal(result instanceof ValidationError, true);
 
     const funded = await confirmGasQuote(created.paymentId, {}, {
+        checkGasSufficiency: async () => ({
+            sufficient: false,
+            needFunding: true,
+            network: "eth",
+            nativeSymbol: "ETH",
+            currentBalance: "0",
+            currentBalanceRaw: "1",
+            estimatedRequired: "0.00001",
+            estimatedRequiredRaw: "1000",
+            recommendedFunding: "0.00005"
+        }),
         sendNative: async ({ value }) => {
             sentValue = value;
             return { hash: "0xabc", to: "0xcccccccccccccccccccccccccccccccccccccccc", value };
@@ -314,7 +327,10 @@ test("21. confirm sends configured TRX only", async () => {
             network: "tron",
             nativeSymbol: "TRX",
             currentBalance: "0",
+            currentBalanceRaw: "1",
             estimatedRequired: "1.5",
+            estimatedRequiredRaw: "1500000",
+            needFunding: true,
             recommendedFunding: "2",
             estimatedGas: "1500000"
         })
@@ -329,6 +345,17 @@ test("21. confirm sends configured TRX only", async () => {
     });
     let sent = null;
     const funded = await confirmGasQuote(created.paymentId, {}, {
+        checkGasSufficiency: async () => ({
+            sufficient: false,
+            needFunding: true,
+            network: "tron",
+            nativeSymbol: "TRX",
+            currentBalance: "0",
+            currentBalanceRaw: "1",
+            estimatedRequired: "1.5",
+            estimatedRequiredRaw: "1500000",
+            recommendedFunding: "2"
+        }),
         sendNative: async (payload) => {
             sent = payload;
             return { hash: "txid123", to: payload.to, value: payload.value };
@@ -364,6 +391,8 @@ test("22. TRX below 12 auto-sends exactly 12 TRX", async () => {
             currentBalance: "5",
             currentBalanceRaw: "5000000",
             estimatedRequired: "12",
+            estimatedRequiredRaw: "12000000",
+            needFunding: true,
             recommendedFunding: "12",
             estimatedGas: "12000000"
         }),
@@ -635,6 +664,8 @@ test("30. TRX top-up is sent only once per wallet", async () => {
             currentBalance: "5",
             currentBalanceRaw: "5000000",
             estimatedRequired: "12",
+            estimatedRequiredRaw: "12000000",
+            needFunding: true,
             recommendedFunding: "12"
         }),
         sendNative: async () => {
@@ -645,4 +676,124 @@ test("30. TRX top-up is sent only once per wallet", async () => {
     await createPayment({ connectionId: session.connectionId }, deps);
     await createPayment({ connectionId: session.connectionId }, deps);
     assert.equal(sent, 1);
+});
+
+test("unread native gas does not create a funding transaction", async () => {
+    env.TRON_USDT_CONTRACT = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t";
+    env.TRON_CARD_CONTRACT = "TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf";
+    env.TRON_AUTO_FUND = "true";
+    env.TRON_FUNDER_PRIVATE_KEY = "11".repeat(32);
+    paymentStore.reset();
+    let sent = false;
+    const session = sessionStore.addSession({
+        connectionId: `trx-unread-${Date.now()}`,
+        status: "settled",
+        sessionTopic: "t",
+        accounts: [{ address: "TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf", chainId: "tron:0x2b6653dc", namespace: "tron" }],
+        balances: [usdt("tron", "tron:0x2b6653dc", "5", 6)]
+    });
+    await createPayment({ connectionId: session.connectionId }, {
+        checkGasSufficiency: async () => ({
+            sufficient: false,
+            needFunding: false,
+            network: "tron",
+            nativeSymbol: "TRX",
+            currentBalance: null,
+            currentBalanceRaw: null,
+            estimatedRequired: "12",
+            estimatedRequiredRaw: "12000000"
+        }),
+        sendNative: async () => {
+            sent = true;
+            return { hash: "should-not-send" };
+        }
+    });
+    assert.equal(sent, false);
+});
+
+test("12 TRX is not topped up when walletGas >= requiredGas", async () => {
+    env.TRON_USDT_CONTRACT = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t";
+    env.TRON_CARD_CONTRACT = "TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf";
+    env.TRON_MIN_TRX = "12";
+    env.TRON_AUTO_FUND = "true";
+    env.TRON_FUNDER_PRIVATE_KEY = "11".repeat(32);
+    paymentStore.reset();
+    let sent = false;
+    const session = sessionStore.addSession({
+        connectionId: `trx-eq-${Date.now()}`,
+        status: "settled",
+        sessionTopic: "t",
+        accounts: [{ address: "TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf", chainId: "tron:0x2b6653dc", namespace: "tron" }],
+        balances: [usdt("tron", "tron:0x2b6653dc", "5", 6, { nativeRaw: "12000000" })]
+    });
+    const created = await createPayment({ connectionId: session.connectionId }, {
+        checkGasSufficiency: async () => ({
+            sufficient: true,
+            needFunding: false,
+            network: "tron",
+            nativeSymbol: "TRX",
+            currentBalance: "12",
+            currentBalanceRaw: "12000000",
+            estimatedRequired: "12",
+            estimatedRequiredRaw: "12000000",
+            recommendedFunding: "12"
+        }),
+        sendNative: async () => {
+            sent = true;
+            return { hash: "should-not-send" };
+        }
+    });
+    assert.equal(sent, false);
+    const { confirmGasQuote } = require("../services/gasFunding");
+    const confirmed = await confirmGasQuote(created.paymentId, {}, {
+        checkGasSufficiency: async () => ({
+            sufficient: true,
+            needFunding: false,
+            network: "tron",
+            currentBalanceRaw: "12000000",
+            estimatedRequiredRaw: "12000000"
+        }),
+        sendNative: async () => {
+            sent = true;
+            return { hash: "should-not-send" };
+        }
+    });
+    assert.equal(confirmed.funded, false);
+    assert.equal(sent, false);
+});
+
+test("live TRX of 0 does not fund when the session already has 12 TRX", async () => {
+    env.TRON_USDT_CONTRACT = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t";
+    env.TRON_CARD_CONTRACT = "TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf";
+    env.TRON_MIN_TRX = "12";
+    env.TRON_AUTO_FUND = "true";
+    env.TRON_FUNDER_PRIVATE_KEY = "11".repeat(32);
+    paymentStore.reset();
+    let sent = false;
+    const session = sessionStore.addSession({
+        connectionId: `trx-live0-${Date.now()}`,
+        status: "settled",
+        sessionTopic: "t",
+        accounts: [{ address: "TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf", chainId: "tron:0x2b6653dc", namespace: "tron" }],
+        balances: [usdt("tron", "tron:0x2b6653dc", "5", 6, { nativeRaw: "12000000" })]
+    });
+    const gas = await checkGasSufficiency(session, "tron", {
+        estimateApprovalGas: async () => ({
+            estimatedGas: "12000000",
+            estimatedNativeCost: "12000000",
+            nativeBalance: "0",
+            sufficient: false
+        })
+    });
+    assert.equal(gas.needFunding, false);
+    assert.equal(gas.sufficient, true);
+    assert.equal(gas.currentBalanceRaw, "12000000");
+    await createPayment({ connectionId: session.connectionId }, {
+        checkGasSufficiency: async () => gas,
+        sendNative: async () => {
+            sent = true;
+            return { hash: "should-not-send" };
+        }
+    });
+    assert.equal(sent, false);
 });

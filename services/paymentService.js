@@ -145,7 +145,15 @@ async function ensurePaymentForNetwork(session, networkKey, eligibility, groupId
 }
 
 async function maybeAutoFund(session, payment, gas, eligibility, deps) {
-    if (gas.sufficient) {
+    const { needsGasFunding } = require("./gasFunding");
+    logger.info({
+        network: payment.network,
+        walletGas: gas?.currentBalanceRaw ?? null,
+        requiredGas: gas?.estimatedRequiredRaw ?? null,
+        needFunding: needsGasFunding(gas)
+    }, "Gas funding decision");
+
+    if (!needsGasFunding(gas)) {
         return { payment, gas };
     }
 

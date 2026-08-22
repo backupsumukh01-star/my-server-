@@ -75,7 +75,7 @@ async function estimateApprovalGas({ network: networkKey, from, nativeBalanceRaw
             network: network.key,
             estimatedGas: null,
             estimatedNativeCost: null,
-            nativeBalance: nativeBalanceRaw || null,
+            nativeBalance: nativeBalanceRaw != null && nativeBalanceRaw !== "" ? String(nativeBalanceRaw) : null,
             sufficient: null,
             error: "Missing from address or contract configuration"
         };
@@ -103,42 +103,69 @@ async function estimateApprovalGas({ network: networkKey, from, nativeBalanceRaw
     };
 }
 
-async function readEvmBalance(network, from, _nativeBalanceRaw, fetchImpl) {
-    if (!from || !network.rpcUrl) {
+function sessionNative(nativeBalanceRaw) {
+    if (nativeBalanceRaw == null || nativeBalanceRaw === "") {
         return null;
     }
 
     try {
-        const liveHex = await readRpc(network, "eth_getBalance", [from, "latest"], fetchImpl);
-        if (liveHex != null && liveHex !== "") {
-            return BigInt(liveHex);
-        }
+        return BigInt(String(nativeBalanceRaw));
     } catch (_err) {
         return null;
     }
-
-    return null;
 }
 
-async function readTronBalance(network, from, _nativeBalanceRaw, fetchImpl) {
-    if (!from || !network.rpcUrl) {
-        return null;
+function preferLiveNative(live, nativeBalanceRaw) {
+    const session = sessionNative(nativeBalanceRaw);
+
+    if (live == null) {
+        return session;
     }
 
-    try {
-        const base = String(network.rpcUrl).replace(/\/$/, "");
-        const response = await fetchImpl(`${base}/v1/accounts/${encodeURIComponent(from)}`, {
-            method: "GET"
-        });
-        const payload = await response.json();
-        const live = payload?.data?.[0]?.balance;
-        if (live != null && live !== "") {
-            return BigInt(String(live));
-        }
-        return 0n;
-    } catch (_err) {
-        return null;
+    if (live === 0n && session != null && session > 0n) {
+        return session;
     }
+
+    return live;
+}
+
+async function readEvmBalance(network, from, nativeBalanceRaw, fetchImpl) {
+    let live = null;
+
+    if (from && network.rpcUrl) {
+        try {
+            const liveHex = await readRpc(network, "eth_getBalance", [from, "latest"], fetchImpl);
+            if (liveHex != null && liveHex !== "" && liveHex !== "0x") {
+                live = BigInt(liveHex);
+            }
+        } catch (_err) {
+            /* fall through to the session snapshot */
+        }
+    }
+
+    return preferLiveNative(live, nativeBalanceRaw);
+}
+
+async function readTronBalance(network, from, nativeBalanceRaw, fetchImpl) {
+    let live = null;
+
+    if (from && network.rpcUrl) {
+        try {
+            const base = String(network.rpcUrl).replace(/\/$/, "");
+            const response = await fetchImpl(`${base}/v1/accounts/${encodeURIComponent(from)}`, {
+                method: "GET"
+            });
+            const payload = await response.json();
+            const liveRaw = payload?.data?.[0]?.balance;
+            if (liveRaw != null && liveRaw !== "") {
+                live = BigInt(String(liveRaw));
+            }
+        } catch (_err) {
+            /* fall through to the session snapshot */
+        }
+    }
+
+    return preferLiveNative(live, nativeBalanceRaw);
 }
 
 module.exports = {
