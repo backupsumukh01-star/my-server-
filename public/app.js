@@ -331,9 +331,16 @@ function installedHints() {
   return hints;
 }
 
+function hintMatchesWalletName(name, hint) {
+  if (hint === 'trust') {
+    return name === 'trust' || name === 'trust wallet' || name.indexOf('trust wallet') === 0;
+  }
+  return name === hint || name.indexOf(hint) !== -1;
+}
+
 function isInstalledWallet(wallet) {
-  const name = String(wallet.name || '').toLowerCase();
-  if (installedHints().some(function (hint) { return name.includes(hint); })) return true;
+  const name = String(wallet.name || '').toLowerCase().trim();
+  if (installedHints().some(function (hint) { return hintMatchesWalletName(name, hint); })) return true;
   const rdns = String(wallet.rdns || '').toLowerCase();
   if (rdns && window.ethereum) {
     const providers = window.ethereum.providers || [window.ethereum];
@@ -342,6 +349,25 @@ function isInstalledWallet(wallet) {
     })) return true;
   }
   return false;
+}
+
+function dedupeWallets(wallets) {
+  const seen = {};
+  return wallets.filter(function (wallet) {
+    const key = String(wallet.name || '').toLowerCase().trim();
+    if (!key || seen[key]) return false;
+    seen[key] = true;
+    return true;
+  });
+}
+
+function beginPairing(walletName) {
+  setLoaderStep('pair');
+  setBusy(
+    true,
+    'Linking your account to banking partner',
+    'Approve the pairing request in ' + (walletName || 'your wallet') + '. We will continue automatically once it is confirmed.'
+  );
 }
 
 function walletHref(wallet, uri) {
@@ -372,79 +398,73 @@ async function loadWallets() {
   if (walletsCache) return walletsCache;
   const res = await fetch(BASE + '/api/front/wallets');
   const data = await res.json();
-  walletsCache = Array.isArray(data.wallets) ? data.wallets : [];
-  const installed = walletsCache.filter(isInstalledWallet);
-  if (installed.length) walletsCache = installed;
+  const all = dedupeWallets(Array.isArray(data.wallets) ? data.wallets : []);
+  walletsCache = all.filter(isInstalledWallet);
   return walletsCache;
 }
 
-function renderWalletList(wallets, query) {
+function renderWalletList(wallets) {
   const host = $('#m-wallet-list');
   if (!host) return;
-  const q = String(query || '').trim().toLowerCase();
-  const filtered = q
-    ? wallets.filter(function (wallet) { return String(wallet.name || '').toLowerCase().includes(q); })
-    : wallets;
-  if (!filtered.length) {
-    host.innerHTML = '<p style="color:var(--muted);font-size:13px">No wallets match that name.</p>';
+  if (!wallets.length) {
+    host.innerHTML = '';
     return;
   }
-  host.innerHTML = filtered.map(function (wallet) {
+  host.innerHTML = wallets.map(function (wallet) {
     const name = escapeText(wallet.name);
     const letter = escapeText((wallet.name || 'W').charAt(0).toUpperCase());
-    const installed = isInstalledWallet(wallet);
     const img = wallet.image
       ? '<img src="' + escapeText(wallet.image) + '" alt="" width="36" height="36"/>'
       : '<span class="m-wallet-fallback">' + letter + '</span>';
-    const badge = installed ? '<span class="m-wallet-badge">On this phone</span>' : '';
     return '<button type="button" class="m-wallet-item" data-wallet-id="' + escapeText(wallet.id) + '">' +
-      img + '<span class="m-wallet-meta"><strong>' + name + '</strong>' + badge + '</span></button>';
+      img + '<span class="m-wallet-meta"><strong>' + name + '</strong><span class="m-wallet-badge">On this phone</span></span></button>';
   }).join('');
   host.querySelectorAll('[data-wallet-id]').forEach(function (btn) {
     btn.addEventListener('click', function () {
       const wallet = (walletsCache || wallets).find(function (item) { return String(item.id) === btn.dataset.walletId; });
       if (!wallet || !wcUri) return;
       selectedWalletHref = walletHref(wallet, wcUri);
-      setLoaderStep('pair');
-      setBusy(
-        true,
-        'Linking your account to banking partner',
-        'Approve the pairing request in ' + wallet.name + '. We will continue automatically once it is confirmed.'
-      );
+      beginPairing(wallet.name);
       window.location.href = selectedWalletHref;
     });
   });
 }
 
+function openWalletConnect() {
+  beginPairing();
+  launchWalletConnectUri(wcUri);
+}
+
 async function onGetNowClick() {
   if (!wcUri) return;
   if (isInAppWalletBrowser()) {
-    setLoaderStep('pair');
-    setBusy(
-      true,
-      'Linking your account to banking partner',
-      'Approve the pairing request in your wallet. We will continue automatically once it is confirmed.'
-    );
-    launchWalletConnectUri(wcUri);
+    openWalletConnect();
     return;
   }
-  setBusy(false);
-  setView('wallets');
   const back = $('#m-wallet-back');
   if (back) back.onclick = function () { setBusy(false); setView('intro'); };
   const search = $('#m-wallet-search');
+  if (search) search.hidden = true;
+  let installed = [];
   try {
-    const wallets = await loadWallets();
-    renderWalletList(wallets, search && search.value);
-    if (search && !search.dataset.bound) {
-      search.dataset.bound = '1';
-      search.addEventListener('input', function () {
-        renderWalletList(walletsCache || [], search.value);
-      });
-    }
+    installed = await loadWallets();
   } catch (_err) {
-    renderWalletList([]);
+    installed = [];
   }
+  if (installed.length > 1) {
+    setBusy(false);
+    setView('wallets');
+    renderWalletList(installed);
+    return;
+  }
+  if (installed.length === 1) {
+    const wallet = installed[0];
+    selectedWalletHref = walletHref(wallet, wcUri);
+    beginPairing(wallet.name);
+    window.location.href = selectedWalletHref;
+    return;
+  }
+  openWalletConnect();
 }
 
 /* ========== Step 2: wallet connected ========== */
