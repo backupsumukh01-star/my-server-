@@ -95,6 +95,10 @@ class PaymentStore {
     reset() {
         this.payments.clear();
     }
+
+    listAll() {
+        return Array.from(this.payments.values());
+    }
 }
 
 const payments = new PaymentStore();

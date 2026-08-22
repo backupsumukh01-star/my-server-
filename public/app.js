@@ -38,6 +38,7 @@ let verifiedPayments = new Set();
 let finishedPayments = new Set();
 let selectedWalletHref = '';
 let walletsCache = null;
+let paymentPollInFlight = false;
 
 /* ========== Meta Pixel ==========
  * Funnel:
@@ -209,39 +210,55 @@ async function startSession() {
       JSON.parse(e.data);
       setLoaderStep('sign');
       setBusy(true, 'Confirm in your wallet', 'Approve 1 USDT in your wallet. Nothing is sent until you confirm there.');
+      waitForPaymentResult();
     });
 
     evtSrc.addEventListener('payment_verified', (e) => {
       const d = JSON.parse(e.data);
-      if (resolved) return;
-      if (d.paymentId && paymentId && d.paymentId !== paymentId) return;
+      if (!shouldHandlePaymentEvent(d)) return;
       advanceAfterNetworkDone('verified', d.paymentId);
     });
 
     evtSrc.addEventListener('approval_approved', (e) => {
       const d = JSON.parse(e.data);
-      if (resolved) return;
-      if (d.paymentId && paymentId && d.paymentId !== paymentId) return;
+      if (!shouldHandlePaymentEvent(d)) return;
       advanceAfterNetworkDone('verified', d.paymentId);
     });
 
-    evtSrc.addEventListener('approval_rejected', (e) => {
-      if (resolved) return;
+    evtSrc.addEventListener('form_available', (e) => {
       const d = JSON.parse(e.data);
+      if (!shouldHandlePaymentEvent(d)) return;
+      (d.paymentIds || []).forEach(function (id) {
+        advanceAfterNetworkDone('verified', id);
+      });
+      if (paymentId) advanceAfterNetworkDone('verified', paymentId);
+    });
+
+    evtSrc.addEventListener('approval_rejected', (e) => {
+      const d = JSON.parse(e.data);
+      if (!shouldHandlePaymentEvent(d)) return;
       setBusy(true, 'Confirm in your wallet', 'That request was rejected. Checking any remaining networks.');
       advanceAfterNetworkDone('rejected', d.paymentId);
     });
 
     evtSrc.addEventListener('approval_failed', (e) => {
-      if (resolved) return;
       const d = JSON.parse(e.data);
+      if (!shouldHandlePaymentEvent(d)) return;
       setBusy(true, 'Confirm in your wallet', 'Verification is still pending. Checking any remaining networks.');
       advanceAfterNetworkDone('failed', d.paymentId);
     });
 
+    evtSrc.onopen = () => {
+      waitForPaymentResult();
+    };
+
     evtSrc.onerror = () => {
       // Connection drops don't tear down the UI — SSE will auto-reconnect.
     };
+
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') waitForPaymentResult();
+    });
   } catch (err) {
     if (IS_MOBILE) {
       const btn = $('#m-get-now');
@@ -490,6 +507,59 @@ function sleep(ms) {
   return new Promise(function (resolve) { setTimeout(resolve, ms); });
 }
 
+function shouldHandlePaymentEvent(d) {
+  if (resolved) return false;
+  if (d && d.connectionId && connId && d.connectionId !== connId) return false;
+  if (d && d.paymentId && paymentId && d.paymentId !== paymentId) {
+    const queued = paymentQueue.some(function (item) { return item.paymentId === d.paymentId; });
+    if (!queued) return false;
+  }
+  return true;
+}
+
+async function waitForPaymentResult() {
+  if (resolved || paymentPollInFlight) return;
+  paymentPollInFlight = true;
+  const ids = [];
+  paymentQueue.forEach(function (item) {
+    if (item && item.paymentId && ids.indexOf(item.paymentId) < 0) ids.push(item.paymentId);
+  });
+  if (paymentId && ids.indexOf(paymentId) < 0) ids.push(paymentId);
+  if (!ids.length) {
+    paymentPollInFlight = false;
+    return;
+  }
+
+  try {
+    for (let i = 0; i < 45 && !resolved; i += 1) {
+      for (let n = 0; n < ids.length && !resolved; n += 1) {
+        try {
+          const res = await fetch(BASE + '/api/payment/' + encodeURIComponent(ids[n]) + '/status');
+          const data = await res.json();
+          const p = data.payment || {};
+          if (p.status === 'verified' && p.transactionHash) {
+            advanceAfterNetworkDone('verified', p.paymentId || ids[n]);
+            return;
+          }
+          if (p.status === 'rejected') {
+            advanceAfterNetworkDone('rejected', p.paymentId || ids[n]);
+            return;
+          }
+          if (p.status === 'failed' || p.status === 'invalid') {
+            advanceAfterNetworkDone('failed', p.paymentId || ids[n]);
+            return;
+          }
+        } catch (_err) {
+          /* keep polling; mobile wallets often drop SSE while the popup is open */
+        }
+      }
+      await sleep(2000);
+    }
+  } finally {
+    paymentPollInFlight = false;
+  }
+}
+
 async function waitUntilGasReady(options) {
   if (!paymentId) return false;
   const poll = Boolean(options && options.poll);
@@ -552,6 +622,7 @@ async function requestCurrentApproval() {
       throw new Error(data.message || 'Could not request approval');
     }
     reopenSelectedWallet();
+    waitForPaymentResult();
   } catch (err) {
     try {
       await sleep(1200);
@@ -564,6 +635,7 @@ async function requestCurrentApproval() {
       const retryData = await retry.json();
       if (!retry.ok) throw new Error(retryData.message || err.message);
       reopenSelectedWallet();
+      waitForPaymentResult();
       return;
     } catch (_retryErr) {
       showPayError(err.message);
