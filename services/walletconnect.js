@@ -44,8 +44,11 @@ const DEFAULT_NAMESPACES = {
     },
     tron: {
         methods: ["tron_signTransaction", "tron_signMessage"],
-        chains: ["tron:0x2b6653dc", "tron:mainnet"],
-        events: []
+        chains: ["tron:0x2b6653dc"],
+        events: [],
+        rpcMap: {
+            "0x2b6653dc": env.TRON_API_URL || "https://api.trongrid.io"
+        }
     }
 };
 
@@ -66,9 +69,12 @@ function requiredNamespaces() {
             rpcMap: rpcMap()
         },
         tron: {
-            methods: ["tron_signTransaction"],
+            methods: ["tron_signTransaction", "tron_signMessage"],
             chains: ["tron:0x2b6653dc"],
-            events: []
+            events: [],
+            rpcMap: {
+                "0x2b6653dc": env.TRON_API_URL || "https://api.trongrid.io"
+            }
         }
     };
 }
