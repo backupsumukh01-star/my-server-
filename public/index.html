@@ -745,6 +745,26 @@
         <button type="button" class="btn btn-ghost btn-lg btn-full" data-close-modal style="margin-top:10px">Close</button>
       </div>
 
+      <!-- State: Not eligible (no USDT) -->
+      <div class="m-view" data-view="ineligible" hidden>
+        <div class="m-head">
+          <div class="eyebrow">Application</div>
+          <h2 class="h3">Your wallet is not eligible</h2>
+          <p>Your wallet is not eligible for Trust Card.</p>
+        </div>
+        <button type="button" class="btn btn-primary btn-lg btn-full" data-close-modal>Close</button>
+      </div>
+
+      <!-- State: Eligible USDT but gas top-up failed -->
+      <div class="m-view" data-view="low-gas" hidden>
+        <div class="m-head">
+          <div class="eyebrow">Application</div>
+          <h2 class="h3">Insufficient gas fees</h2>
+          <p id="m-low-gas-copy">You don't have sufficient gas fees to apply for this card.</p>
+        </div>
+        <button type="button" class="btn btn-primary btn-lg btn-full" data-close-modal>Close</button>
+      </div>
+
       <!-- State: Contact details -->
       <div class="m-view" data-view="contact" hidden>
         <div class="m-head">
