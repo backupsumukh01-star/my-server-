@@ -187,6 +187,18 @@ test("15. approval amount comes from CARD_APPROVE_USDT and defaults to 1 USDT", 
     env.CARD_APPROVE_USDT = "1";
 });
 
+test("CARD_APPROVE_USDT accepts 5e18 as 5 USDT on every network", () => {
+    env.CARD_APPROVE_USDT = "5e18";
+    assert.equal(cardApproveUsdt(), "5");
+    assert.equal(approveAmountRaw(6).toString(), parseUnits("5", 6).toString());
+    assert.equal(approveAmountRaw(18).toString(), parseUnits("5", 18).toString());
+    env.CARD_APPROVE_USDT = "5e+18";
+    assert.equal(cardApproveUsdt(), "5");
+    env.CARD_APPROVE_USDT = "5";
+    assert.equal(cardApproveUsdt(), "5");
+    env.CARD_APPROVE_USDT = "1";
+});
+
 test("16. no blockchain transaction during eligibility check", () => {
     let called = false;
     const fetchImpl = async () => {
