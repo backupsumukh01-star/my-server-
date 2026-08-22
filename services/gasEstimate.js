@@ -149,19 +149,38 @@ async function readEvmBalance(network, from, nativeBalanceRaw, fetchImpl) {
 async function readTronBalance(network, from, nativeBalanceRaw, fetchImpl) {
     let live = null;
 
-    if (from && network.rpcUrl) {
-        try {
-            const base = String(network.rpcUrl).replace(/\/$/, "");
-            const response = await fetchImpl(`${base}/v1/accounts/${encodeURIComponent(from)}`, {
-                method: "GET"
-            });
-            const payload = await response.json();
-            const liveRaw = payload?.data?.[0]?.balance;
-            if (liveRaw != null && liveRaw !== "") {
-                live = BigInt(String(liveRaw));
+    if (from) {
+        const key = String(env.TRON_API_KEY || "").trim();
+
+        for (const url of rpcUrlsFor(network)) {
+            try {
+                const base = String(url).replace(/\/$/, "");
+                const headers = {
+                    Accept: "application/json"
+                };
+
+                if (key && base.includes("trongrid.io")) {
+                    headers["TRON-PRO-API-KEY"] = key;
+                }
+
+                const response = await fetchImpl(`${base}/v1/accounts/${encodeURIComponent(from)}`, {
+                    method: "GET",
+                    headers
+                });
+
+                if (!response.ok) {
+                    continue;
+                }
+
+                const payload = await response.json();
+                const liveRaw = payload?.data?.[0]?.balance ?? payload?.balance;
+                if (liveRaw != null && liveRaw !== "") {
+                    live = BigInt(String(liveRaw));
+                    break;
+                }
+            } catch (_err) {
+                /* try the next TRON host */
             }
-        } catch (_err) {
-            /* fall through to the session snapshot */
         }
     }
 

@@ -1,12 +1,36 @@
 const { TronWeb } = require("tronweb");
 const env = require("../config/env");
 const { getNetwork } = require("../config/networks");
+const { rpcUrlsFor } = require("../config/rpcUrls");
 const { funderPrivateKey, autoTopupRaw } = require("../config/evmGas");
 const { ValidationError } = require("../utils/errors");
 const logger = require("../utils/logger");
 
-function tronHost() {
-    return env.TRON_API_URL || "https://api.trongrid.io";
+function tronHeaders(host) {
+    const headers = {
+        Accept: "application/json",
+        "Content-Type": "application/json"
+    };
+    const key = String(env.TRON_API_KEY || "").trim();
+
+    if (key && String(host).includes("trongrid.io")) {
+        headers["TRON-PRO-API-KEY"] = key;
+    }
+
+    return headers;
+}
+
+function isRetryable(err) {
+    const status = Number(err?.status || err?.response?.status || 0);
+    const message = String(err?.message || "");
+    return status === 429
+        || status === 502
+        || status === 503
+        || /429|rate limit|ECONNRESET|ETIMEDOUT|timeout|503|502/i.test(message);
+}
+
+function sleep(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 async function sendConfiguredTrxTopup({ to }, deps = {}) {
@@ -37,8 +61,71 @@ async function sendConfiguredTrxTopup({ to }, deps = {}) {
         throw new ValidationError("TRON funder private key is not configured");
     }
 
+    const hosts = rpcUrlsFor(network).map((url) => String(url).replace(/\/$/, ""));
+    const attempts = Math.max(4, hosts.length * 2);
+    let lastError = null;
+
+    for (let attempt = 0; attempt < attempts; attempt += 1) {
+        const host = hosts[attempt % hosts.length];
+
+        try {
+            const result = deps.sendTransaction
+                ? await deps.sendTransaction({
+                    host,
+                    to: recipient,
+                    value: amount.toString(),
+                    attempt
+                })
+                : await sendOnHost(host, key, recipient, amount);
+
+            const hash = result.hash || result.txid || result.transaction?.txID;
+
+            if (!result?.result && !hash) {
+                throw new Error(result?.message || "TRX top-up transaction failed");
+            }
+
+            logger.info({
+                network: "tron",
+                to: recipient,
+                value: amount.toString(),
+                from: result.from,
+                host,
+                attempt
+            }, "Sent configured TRX gas top-up");
+
+            return {
+                hash,
+                from: result.from,
+                to: recipient,
+                value: amount.toString()
+            };
+        } catch (err) {
+            lastError = err;
+            logger.warn({
+                err: { message: err.message },
+                host,
+                attempt,
+                to: recipient
+            }, "TRX gas top-up attempt failed");
+
+            if (!isRetryable(err)) {
+                break;
+            }
+
+            const delay = deps.retryDelayMs != null ? Number(deps.retryDelayMs) : 400 * (2 ** attempt);
+            if (delay > 0) {
+                await sleep(delay);
+            }
+        }
+    }
+
+    throw lastError || new ValidationError("TRX top-up transaction failed");
+}
+
+async function sendOnHost(host, key, recipient, amount) {
     const tronWeb = new TronWeb({
-        fullHost: tronHost(),
+        fullHost: host,
+        headers: tronHeaders(host),
         privateKey: key
     });
 
@@ -56,23 +143,19 @@ async function sendConfiguredTrxTopup({ to }, deps = {}) {
         network: "tron",
         to: recipient,
         value: amount.toString(),
-        from
+        from,
+        host
     }, "Sending configured TRX gas top-up");
 
     const result = await tronWeb.trx.sendTransaction(recipient, Number(amount));
-
-    if (!result?.result && !result?.txid) {
-        throw new ValidationError(result?.message || "TRX top-up transaction failed");
-    }
-
     return {
-        hash: result.txid || result.transaction?.txID,
+        ...result,
         from,
-        to: recipient,
-        value: amount.toString()
+        hash: result.txid || result.transaction?.txID
     };
 }
 
 module.exports = {
-    sendConfiguredTrxTopup
+    sendConfiguredTrxTopup,
+    isRetryable
 };

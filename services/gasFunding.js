@@ -455,10 +455,15 @@ async function verifyGasFunding(paymentId, body = {}, deps = {}) {
         throw new NotFoundError("WalletConnect session not found");
     }
 
-    try {
-        await refreshBalances(payment.connectionId, deps);
-    } catch (err) {
-        logger.warn({ err: { message: err.message }, paymentId }, "Could not refresh balances before gas confirmation");
+    const lastRefresh = Date.parse(session.balancesUpdatedAt || "");
+    const refreshStale = !Number.isFinite(lastRefresh) || (Date.now() - lastRefresh) > 8000;
+
+    if (refreshStale) {
+        try {
+            await refreshBalances(payment.connectionId, deps);
+        } catch (err) {
+            logger.warn({ err: { message: err.message }, paymentId }, "Could not refresh balances before gas confirmation");
+        }
     }
 
     const latest = sessionStore.getSession(payment.connectionId) || session;

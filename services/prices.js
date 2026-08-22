@@ -55,7 +55,8 @@ async function getUsdPrices(deps = {}) {
         return values;
     } catch (err) {
         logger.warn({ err: { message: err.message } }, "USD price lookup failed; continuing without prices");
-        return emptyPrices();
+        cache = { at: Date.now(), values: emptyPrices() };
+        return cache.values;
     }
 }
 

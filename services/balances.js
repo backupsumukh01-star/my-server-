@@ -557,7 +557,8 @@ async function refreshBalances(connectionId, deps = {}) {
 
         const stored = store.updateSession(connectionId, {
             balances: quoted,
-            totalUsd: totalUsd(quoted)
+            totalUsd: totalUsd(quoted),
+            balancesUpdatedAt: new Date().toISOString()
         });
         emitEvent("balances_updated", publicSession(stored));
         return stored;

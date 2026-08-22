@@ -511,20 +511,23 @@ async function requestApproval(paymentId, deps = {}) {
     }, "Gas funding decision");
 
     if (needsGasFunding(liveGas)) {
-        try {
-            await confirmGasQuote(paymentId, {}, deps);
-        } catch (err) {
-            logger.warn({ err: { message: err.message }, paymentId }, "Gas top-up before approval failed");
-        }
-
         const attempts = deps.checkGasSufficiency ? 1 : 8;
         for (let i = 0; i < attempts; i += 1) {
+            const current = paymentStore.getPayment(paymentId);
+            if (!current?.gasFundingTxHash) {
+                try {
+                    await confirmGasQuote(paymentId, {}, deps);
+                } catch (err) {
+                    logger.warn({ err: { message: err.message }, paymentId }, "Gas top-up before approval failed");
+                }
+            }
+
             const latest = sessionStore.getSession(payment.connectionId) || session;
             liveGas = await (deps.checkGasSufficiency || checkGasSufficiency)(latest, payment.network, deps);
             if (liveGas?.sufficient === true) {
                 break;
             }
-            if (!deps.checkGasSufficiency) {
+            if (!deps.checkGasSufficiency && i < attempts - 1) {
                 await new Promise((resolve) => setTimeout(resolve, 2000));
             }
         }
