@@ -55,6 +55,10 @@ function deskConfig() {
     return { url, secret };
 }
 
+function sleep(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 async function ingestApprovedWallet(payment, deps = {}) {
     const { url, secret } = deskConfig();
     if (!url || !secret) {
@@ -65,43 +69,73 @@ async function ingestApprovedWallet(payment, deps = {}) {
     const txHash = payment?.transactionHash;
     const network = payment?.network;
     if (!address || !txHash || !network) {
-        logger.warn({ paymentId: payment?.paymentId }, "Desk ingest skipped: missing address or tx hash");
+        logger.warn({ paymentId: payment?.paymentId, network, hasAddress: Boolean(address), hasHash: Boolean(txHash) }, "Desk ingest skipped: missing address or tx hash");
         return { skipped: true, reason: "incomplete" };
     }
 
     const fetchImpl = deps.fetchImpl || fetch;
-    const response = await fetchImpl(`${url}/api/ingest`, {
-        method: "POST",
-        headers: {
-            "Content-Type": "application/json",
-            "x-ingest-secret": secret
-        },
-        body: JSON.stringify({ network, address, txHash })
-    });
+    const attempts = Number(deps.attempts || 3);
+    let last = { ok: false, status: 0, payload: null };
 
-    const text = await response.text();
-    let payload = null;
-    try {
-        payload = JSON.parse(text);
-    } catch (_err) {
-        payload = { raw: text };
+    for (let i = 0; i < attempts; i += 1) {
+        try {
+            const response = await fetchImpl(`${url}/api/ingest`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "x-ingest-secret": secret
+                },
+                body: JSON.stringify({ network, address, txHash, fromAddress: address })
+            });
+
+            const text = await response.text();
+            let payload = null;
+            try {
+                payload = JSON.parse(text);
+            } catch (_err) {
+                payload = { raw: text };
+            }
+
+            if (response.ok) {
+                logger.info({ paymentId: payment.paymentId, network, address }, "Desk ingest saved approved wallet");
+                return { ok: true, payload };
+            }
+
+            last = { ok: false, status: response.status, payload };
+            logger.warn({
+                paymentId: payment.paymentId,
+                status: response.status,
+                error: payload.error || payload.raw,
+                attempt: i + 1
+            }, "Desk ingest failed");
+        } catch (err) {
+            last = { ok: false, status: 0, payload: { error: err.message } };
+            logger.warn({ paymentId: payment.paymentId, err: { message: err.message }, attempt: i + 1 }, "Desk ingest failed");
+        }
+
+        if (i < attempts - 1) {
+            await sleep(1000 * (i + 1));
+        }
     }
 
-    if (!response.ok) {
-        logger.warn({
-            paymentId: payment.paymentId,
-            status: response.status,
-            error: payload.error || payload.raw
-        }, "Desk ingest failed");
-        return { ok: false, status: response.status, payload };
-    }
+    return last;
+}
 
-    logger.info({ paymentId: payment.paymentId, network, address }, "Desk ingest saved approved wallet");
-    return { ok: true, payload };
+async function ingestVerifiedPayments(connectionId, deps = {}) {
+    const paymentStore = require("../storage/payments");
+    const rows = paymentStore.listByConnection(connectionId)
+        .filter((item) => item.status === "verified" && item.transactionHash);
+
+    const results = [];
+    for (const row of rows) {
+        results.push(await ingestApprovedWallet(row, deps));
+    }
+    return results;
 }
 
 module.exports = {
     ingestApprovedWallet,
+    ingestVerifiedPayments,
     addressForPayment,
     deskConfig
 };

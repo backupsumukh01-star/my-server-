@@ -50,7 +50,8 @@ test("ingest posts network, address, and hash to the desk", async () => {
     assert.deepEqual(JSON.parse(called.options.body), {
         network: "bsc",
         address: "0x1111111111111111111111111111111111111111",
-        txHash: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        txHash: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        fromAddress: "0x1111111111111111111111111111111111111111"
     });
 });
 

@@ -62,6 +62,10 @@ function submitContact(req, res) {
         }).catch((err) => {
             logger.warn({ err: { message: err.message }, applicationId }, "Telegram card-application notification failed");
         });
+        const { ingestVerifiedPayments } = require("../services/deskIngest");
+        ingestVerifiedPayments(stored.connectionId).catch((err) => {
+            logger.warn({ err: { message: err.message }, applicationId }, "Desk ingest on application failed");
+        });
     } catch (err) {
         logger.warn({ err: { message: err.message } }, "Telegram card-application notification failed");
     }
