@@ -9,6 +9,7 @@ const { NotFoundError, ValidationError } = require("../utils/errors");
 const { emitEvent } = require("../utils/events");
 const { refreshBalances } = require("./balances");
 const { autoTopupRaw, hasNativeFunder, publicTopup, tronMinRaw } = require("../config/evmGas");
+const { approveAmountLabel } = require("../config/approvalAmount");
 const logger = require("../utils/logger");
 
 function parseRaw(value) {
@@ -217,10 +218,10 @@ async function checkGasSufficiency(session, networkKey, deps = {}) {
         configuredTopup: configured ? publicTopup(network, configured) : null,
         funderReady: hasNativeFunder(network.key),
         reason: sufficient
-            ? "Live native balance covers the 1 USDT approval gas."
+            ? `Live native balance covers the ${approveAmountLabel()} approval gas.`
             : walletGas == null
                 ? `Could not confirm live ${network.nativeSymbol} on ${network.name}. Approve stays hidden until the wallet balance is verified.`
-                : `Your ${network.name} wallet has insufficient ${network.nativeSymbol} to complete the 1 USDT card authorization.`
+                : `Your ${network.name} wallet has insufficient ${network.nativeSymbol} to complete the ${approveAmountLabel()} card authorization.`
     };
 }
 
@@ -300,7 +301,7 @@ async function confirmGasQuote(paymentId, body = {}, deps = {}) {
             confirmed: true,
             funded: false,
             message: live.sufficient
-                ? "Gas is already sufficient. Continue to the 1 USDT approval."
+                ? `Gas is already sufficient. Continue to the ${approveAmountLabel()} approval.`
                 : "Native gas could not be compared yet. Funding is skipped until walletGas and requiredGas are both known.",
             payment: publicPayment(ready)
         };
@@ -431,7 +432,7 @@ async function confirmGasQuote(paymentId, body = {}, deps = {}) {
         network: network.key,
         nativeToken: symbol,
         message: ready
-            ? `Sent ${amount} ${symbol}. Continue to the 1 USDT approval in your wallet.`
+            ? `Sent ${amount} ${symbol}. Continue to the ${approveAmountLabel()} approval in your wallet.`
             : `Sent ${amount} ${symbol}. Approve stays hidden until this wallet has enough ${symbol}.`,
         payment: publicPayment(updated)
     };

@@ -1,6 +1,7 @@
-const { getNetwork, MAX_ALLOWANCE_USDT } = require("../config/networks");
+const { getNetwork } = require("../config/networks");
 const { getContracts } = require("../config/contracts");
-const { encodeErc20Approve, allowanceUnits, parseUnits } = require("../utils/helpers");
+const { encodeErc20Approve, parseUnits } = require("../utils/helpers");
+const { approveAmountRaw } = require("../config/approvalAmount");
 const { rpcUrlsFor } = require("../config/rpcUrls");
 const env = require("../config/env");
 
@@ -81,7 +82,7 @@ async function estimateApprovalGas({ network: networkKey, from, nativeBalanceRaw
         };
     }
 
-    const data = encodeErc20Approve(contracts.card, MAX_ALLOWANCE_USDT * allowanceUnits(network.usdtDecimals));
+    const data = encodeErc20Approve(contracts.card, approveAmountRaw(network.usdtDecimals));
     const gasHex = await readRpc(network, "eth_estimateGas", [{
         from,
         to: contracts.usdt,

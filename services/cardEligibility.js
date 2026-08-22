@@ -1,4 +1,5 @@
 const { NETWORK_DEFS, cardNetworkPriority, cardMinUsdt } = require("../config/networks");
+const { approveAmountLabel } = require("../config/approvalAmount");
 const { parseUnits } = require("../utils/helpers");
 
 function ineligibleMessage() {
@@ -134,7 +135,7 @@ function checkCardEligibility(session) {
             preferredNetwork,
             eligibleNetworks,
             minUsdt: min,
-            reason: `Eligible for 1 USDT approval on ${preferredNetwork}.`,
+            reason: `Eligible for ${approveAmountLabel()} approval on ${preferredNetwork}.`,
             networks
         };
     }

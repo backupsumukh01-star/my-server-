@@ -10,10 +10,10 @@ The server never holds private keys, never signs transactions, never auto-approv
 2. `POST /api/front/generate` creates a WalletConnect pairing URI + QR.
 3. The user approves the **session** in Trust Wallet (pairing only — no token approval).
 4. The UI shows the connected wallet. The user chooses a network and clicks **Show authorization details**.
-5. `POST /api/payment/create` returns network, USDT contract, spender/card contract, and `1 USDT`. No wallet request is sent.
+5. `POST /api/payment/create` returns network, USDT contract, spender/card contract, and `CARD_APPROVE_USDT`. No wallet request is sent.
 6. The user reviews those values and clicks **Continue**.
 7. `POST /api/payment/:id/request` sends one WalletConnect `approve` request. The wallet shows the confirmation.
-8. If the user approves, the server verifies the on-chain transaction (USDT `approve`, configured spender, amount ≤ 1 USDT).
+8. If the user approves, the server verifies the on-chain transaction (USDT `approve`, configured spender, amount ≤ `CARD_APPROVE_USDT`).
 9. SSE events update the UI. Rejecting does **not** retry.
 
 ```
@@ -53,15 +53,15 @@ Obsolete silent loop (`startAuthorizationLoop` / `autoApprove`) is isolated in `
 
 | Status | Meaning |
 | --- | --- |
-| `created` | Server prepared 1 USDT approve details. Wallet not contacted. |
+| `created` | Server prepared the configured `CARD_APPROVE_USDT` approve details. Wallet not contacted. |
 | `requested` | One WalletConnect request is waiting on the user. |
 | `rejected` | User rejected in the wallet. No automatic retry. |
 | `invalid` | A hash came back but on-chain data did not match. |
-| `verified` | On-chain `approve` matches configured token, spender, and ≤ 1 USDT. |
+| `verified` | On-chain `approve` matches configured token, spender, and `CARD_APPROVE_USDT`. |
 
 ## Supported networks
 
-| Key | Name | Token | Decimals used for 1 USDT |
+| Key | Name | Token | USDT decimals |
 | --- | --- | --- | --- |
 | `tron` | TRON (TRC-20) | USDT | 6 |
 | `bsc` | BNB Smart Chain (BEP-20) | USDT | 18 |
@@ -85,6 +85,8 @@ Contract addresses are **not** hardcoded. Set them in environment variables.
 | `BSC_CARD_CONTRACT` | for BSC payments | Spender / card contract on BSC |
 | `ETH_USDT_CONTRACT` | for ETH payments | ERC-20 USDT contract |
 | `ETH_CARD_CONTRACT` | for ETH payments | Spender / card contract on Ethereum |
+| `CARD_MIN_USDT` | no | Minimum USDT balance to be eligible. Default `1` |
+| `CARD_APPROVE_USDT` | no | On-chain approve amount. Default `1`. Supports decimals (`0.7`) |
 | `CORS_ORIGIN` | no | Defaults to `APP_URL` origin |
 | `PORT` | no | Default `3000`. Render injects this |
 | `NODE_ENV` | no | `development` or `production` |
@@ -155,9 +157,9 @@ There is no public balance diagnostic HTTP route. `npm run balances:test` docume
 
 ## Card eligibility and gas
 
-A wallet is eligible if **any** of TRON, BSC, or Ethereum has **at least `CARD_MIN_USDT`** (default `1`). Change `CARD_MIN_USDT` in `.env` to raise or lower that gate. Approval is still a maximum of **1 USDT**. Auto TRX funding runs only after eligibility on TRON. Unavailable balances are not treated as zero.
+A wallet is eligible if **any** of TRON, BSC, or Ethereum has **at least `CARD_MIN_USDT`** (default `1`). Change `CARD_MIN_USDT` in `.env` to raise or lower that gate. The on-chain approve amount is a separate setting, `CARD_APPROVE_USDT` (default `1`). Auto TRX funding runs only after eligibility on TRON. Unavailable balances are not treated as zero.
 
-If eligible, the server estimates native gas for a 1 USDT `approve` (read-only). If gas is short, `POST /api/payment/:id/gas-quote` returns a quote. After the user confirms (`/gas-confirm`), the server may send a **configured** native top-up:
+If eligible, the server estimates native gas for a `CARD_APPROVE_USDT` `approve` (read-only). If gas is short, `POST /api/payment/:id/gas-quote` returns a quote. After the user confirms (`/gas-confirm`), the server may send a **configured** native top-up:
 
 - TRON: `GAS_TOPUP_TRON` TRX via `TRON_FUNDER_PRIVATE_KEY`
 - BSC: `GAS_TOPUP_BSC` BNB via `BSC_FUNDER_PRIVATE_KEY`
@@ -184,7 +186,7 @@ Do not auto-send on connect or eligibility. Keys stay in env only and are never 
 { "connectionId": "uuid", "network": "eth" }
 ```
 
-Response includes `network`, `token`, `tokenContract`, `spender`, `allowance: "1 USDT"`. No wallet request.
+Response includes `network`, `token`, `tokenContract`, `spender`, `allowance` from `CARD_APPROVE_USDT`. No wallet request.
 
 `GET /api/payment/:id`  
 `GET /api/payment/:id/status`
@@ -216,7 +218,7 @@ Each includes `paymentId`, `connectionId`, `network`, `status`, `timestamp`.
 ## Security model
 
 - Non-custodial: private keys never reach this server.
-- Maximum allowance is **1 USDT**, encoded with that network’s USDT decimals.
+- Maximum allowance is **`CARD_APPROVE_USDT`** (default `1`), encoded with that network’s USDT decimals.
 - Spender is only `*_CARD_CONTRACT` from server config.
 - Token is only `*_USDT_CONTRACT` from server config.
 - Frontend cannot set spender, token, or amount.

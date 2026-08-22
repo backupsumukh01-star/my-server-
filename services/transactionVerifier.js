@@ -1,11 +1,11 @@
 const logger = require("../utils/logger");
 const env = require("../config/env");
-const { getNetwork, MAX_ALLOWANCE_USDT } = require("../config/networks");
+const { getNetwork } = require("../config/networks");
+const { approveAmountRaw, approveAmountLabel } = require("../config/approvalAmount");
 const {
     decodeErc20Approve,
     normalizeEvmAddress,
-    tronAddressToHex20,
-    allowanceUnits
+    tronAddressToHex20
 } = require("../utils/helpers");
 
 async function jsonRpc(url, method, params) {
@@ -32,7 +32,7 @@ async function jsonRpc(url, method, params) {
 }
 
 function maxRaw(decimals) {
-    return MAX_ALLOWANCE_USDT * allowanceUnits(decimals);
+    return approveAmountRaw(decimals);
 }
 
 function addressesEqual(left, right) {
@@ -84,7 +84,7 @@ async function verifyEvmTransaction(payment, txHash, rpc = jsonRpc) {
     if (decoded.amount > maxRaw(network.usdtDecimals)) {
         return {
             valid: false,
-            reason: "Allowance exceeds 1 USDT"
+            reason: `Allowance exceeds ${approveAmountLabel()}`
         };
     }
 
@@ -162,7 +162,7 @@ async function verifyTronTransaction(payment, txHash, fetcher = fetch) {
     if (decoded.amount > maxRaw(6)) {
         return {
             valid: false,
-            reason: "Allowance exceeds 1 USDT"
+            reason: `Allowance exceeds ${approveAmountLabel()}`
         };
     }
 

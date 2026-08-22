@@ -1,8 +1,7 @@
 const { requireContracts } = require("./contracts");
 const { ValidationError } = require("../utils/errors");
 const env = require("./env");
-
-const MAX_ALLOWANCE_USDT = 1n;
+const { cardApproveUsdt } = require("./approvalAmount");
 
 const NETWORK_DEFS = {
     tron: {
@@ -74,7 +73,7 @@ function getNetwork(networkKey, options = {}) {
         token: "USDT",
         usdtContract: contracts.usdt,
         cardContract: contracts.card,
-        maxAllowanceUsdt: MAX_ALLOWANCE_USDT
+        maxAllowanceUsdt: cardApproveUsdt()
     };
 }
 
@@ -110,7 +109,6 @@ function cardMinUsdt() {
 }
 
 module.exports = {
-    MAX_ALLOWANCE_USDT,
     NETWORK_DEFS,
     normalizeNetworkKey,
     getNetwork,

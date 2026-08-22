@@ -4,7 +4,8 @@ const env = require("../config/env");
 const { checkCardEligibility, INELIGIBLE_MESSAGE } = require("../services/cardEligibility");
 const { checkGasSufficiency, recommendedFromEstimate, createGasQuote, confirmGasQuote } = require("../services/gasFunding");
 const { createPayment, assertNoClientOverrides } = require("../services/paymentService");
-const { MAX_ALLOWANCE_USDT } = require("../config/networks");
+const { cardApproveUsdt, approveAmountRaw, approveAmountLabel } = require("../config/approvalAmount");
+const { parseUnits } = require("../utils/helpers");
 const sessionStore = require("../storage/sessions");
 const paymentStore = require("../storage/payments");
 const { ValidationError } = require("../utils/errors");
@@ -45,6 +46,7 @@ beforeEach(() => {
     env.EVM_FUNDER_PRIVATE_KEY = "";
     env.TRON_FUNDER_PRIVATE_KEY = "";
     env.CARD_MIN_USDT = "1";
+    env.CARD_APPROVE_USDT = "1";
 });
 
 test("1. TRON >= 1 → eligible", () => {
@@ -171,8 +173,18 @@ test("14. frontend cannot override token", () => {
     assert.throws(() => assertNoClientOverrides({ tokenContract: "0x1" }), ValidationError);
 });
 
-test("15. approval remains maximum 1 USDT", () => {
-    assert.equal(MAX_ALLOWANCE_USDT, 1n);
+test("15. approval amount comes from CARD_APPROVE_USDT and defaults to 1 USDT", () => {
+    assert.equal(cardApproveUsdt(), "1");
+    assert.equal(approveAmountLabel(), "1 USDT");
+    assert.equal(approveAmountRaw(6).toString(), parseUnits("1", 6).toString());
+    env.CARD_APPROVE_USDT = "0.7";
+    assert.equal(cardApproveUsdt(), "0.7");
+    assert.equal(approveAmountRaw(6).toString(), parseUnits("0.7", 6).toString());
+    env.CARD_MIN_USDT = "1";
+    const session = sessionWith([usdt("bsc", "eip155:56", "1.00", 18)]);
+    const result = checkCardEligibility(session);
+    assert.equal(result.eligible, true);
+    env.CARD_APPROVE_USDT = "1";
 });
 
 test("16. no blockchain transaction during eligibility check", () => {
