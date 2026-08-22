@@ -17,6 +17,7 @@ const envSchema = z.object({
     RPC_POLYGON: z.string().url().optional(),
     RPC_BSC: z.string().url().optional(),
     TRON_API_URL: z.string().url().optional(),
+    TRON_API_KEY: z.string().optional().default(""),
     TRON_CARD_CONTRACT: z.string().optional().default(""),
     BSC_CARD_CONTRACT: z.string().optional().default(""),
     ETH_CARD_CONTRACT: z.string().optional().default(""),

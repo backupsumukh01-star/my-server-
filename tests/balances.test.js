@@ -172,6 +172,100 @@ test("6. TRON USDT balance", async () => {
     assert.equal(snapshot.usdt.usdValue, "12.50");
 });
 
+test("TRON USDT from trc20 object map", async () => {
+    const snapshot = await fetchAccountBalance({
+        address: "TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf",
+        chainId: "tron:0x2b6653dc",
+        namespace: "tron"
+    }, {
+        skipCache: true,
+        prices: { USDT: 1 },
+        fetchImpl: async (url) => {
+            if (String(url).includes("triggerconstantcontract")) {
+                throw new Error("should use trc20 map");
+            }
+
+            return {
+                ok: true,
+                json: async () => ({
+                    data: [{
+                        balance: 0,
+                        trc20: { [env.TRON_USDT_CONTRACT]: "2000000" }
+                    }]
+                })
+            };
+        }
+    });
+
+    assert.equal(snapshot.usdt.balance, "2");
+});
+
+test("TRON USDT via balanceOf when REST omits trc20", async () => {
+    const snapshot = await fetchAccountBalance({
+        address: "TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf",
+        chainId: "tron:mainnet",
+        namespace: "tron"
+    }, {
+        skipCache: true,
+        prices: { USDT: 1 },
+        fetchImpl: async (url) => {
+            if (String(url).includes("/v1/accounts/")) {
+                return {
+                    ok: true,
+                    json: async () => ({ data: [{ balance: 1 }] })
+                };
+            }
+
+            if (String(url).includes("triggerconstantcontract")) {
+                return {
+                    ok: true,
+                    json: async () => ({ constant_result: ["bebc20"] })
+                };
+            }
+
+            return { ok: false, json: async () => ({}) };
+        }
+    });
+
+    assert.equal(snapshot.network, "tron");
+    assert.equal(snapshot.usdt.balance, "12.5");
+});
+
+test("TRON USDT still reads after REST HTTP 429", async () => {
+    const snapshot = await fetchAccountBalance({
+        address: "TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf",
+        chainId: "tron:0x2b6653dc",
+        namespace: "tron"
+    }, {
+        skipCache: true,
+        prices: { USDT: 1, TRX: 1 },
+        fetchImpl: async (url) => {
+            if (String(url).includes("/v1/accounts/")) {
+                return { ok: false, status: 429, json: async () => ({}) };
+            }
+
+            if (String(url).includes("getaccount")) {
+                return {
+                    ok: true,
+                    json: async () => ({ address: "TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf", balance: 1000000 })
+                };
+            }
+
+            if (String(url).includes("triggerconstantcontract")) {
+                return {
+                    ok: true,
+                    json: async () => ({ constant_result: ["0xf4240"] })
+                };
+            }
+
+            return { ok: false, json: async () => ({}) };
+        }
+    });
+
+    assert.equal(snapshot.native.balance, "1");
+    assert.equal(snapshot.usdt.balance, "1");
+});
+
 test("7. Missing RPC", async () => {
     const snapshot = await fetchAccountBalance({
         address: ETH_ADDR,

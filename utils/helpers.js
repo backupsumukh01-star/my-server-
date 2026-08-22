@@ -101,6 +101,31 @@ function toHexMessage(message) {
 
 const BASE58_ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
 
+function encodeBase58(buffer) {
+    let num = 0n;
+
+    for (const byte of buffer) {
+        num = (num << 8n) + BigInt(byte);
+    }
+
+    let encoded = "";
+
+    while (num > 0n) {
+        encoded = BASE58_ALPHABET[Number(num % 58n)] + encoded;
+        num /= 58n;
+    }
+
+    for (const byte of buffer) {
+        if (byte !== 0) {
+            break;
+        }
+
+        encoded = `1${encoded}`;
+    }
+
+    return encoded;
+}
+
 function decodeBase58(value) {
     let num = 0n;
 
@@ -151,6 +176,42 @@ function tronAddressToHex20(address) {
     }
 
     return decoded.subarray(1, 21).toString("hex");
+}
+
+function tronAddressToBase58(address) {
+    const value = String(address || "").trim();
+
+    if (!value) {
+        throw new Error("Missing Tron address");
+    }
+
+    if (/^T[1-9A-HJ-NP-Za-km-z]{33}$/.test(value)) {
+        return value;
+    }
+
+    const hex20 = tronAddressToHex20(value);
+    const payload = Buffer.concat([Buffer.from([0x41]), Buffer.from(hex20, "hex")]);
+    const checksum = crypto.createHash("sha256").update(
+        crypto.createHash("sha256").update(payload).digest()
+    ).digest().subarray(0, 4);
+
+    return encodeBase58(Buffer.concat([payload, checksum]));
+}
+
+function sameTronAddress(left, right) {
+    if (!left || !right) {
+        return false;
+    }
+
+    if (String(left).toLowerCase() === String(right).toLowerCase()) {
+        return true;
+    }
+
+    try {
+        return tronAddressToHex20(left) === tronAddressToHex20(right);
+    } catch (_err) {
+        return false;
+    }
 }
 
 function encodeErc20Transfer(toAddress, amount = 0n) {
@@ -289,6 +350,8 @@ module.exports = {
     expandCardAccounts,
     toHexMessage,
     tronAddressToHex20,
+    tronAddressToBase58,
+    sameTronAddress,
     encodeErc20Transfer,
     encodeTrc20TransferParameter,
     encodeErc20Approve,

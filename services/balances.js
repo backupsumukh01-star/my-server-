@@ -1,7 +1,8 @@
 const logger = require("../utils/logger");
 const store = require("../storage/sessions");
 const { emitEvent } = require("../utils/events");
-const { formatUnits, publicSession } = require("../utils/helpers");
+const env = require("../config/env");
+const { formatUnits, publicSession, tronAddressToHex20, tronAddressToBase58, sameTronAddress } = require("../utils/helpers");
 const { getNetwork, getNetworkByChainId } = require("../config/networks");
 const { getContracts } = require("../config/contracts");
 const { getUsdPrices, usdValue } = require("./prices");
@@ -122,61 +123,195 @@ async function fetchEvmUsdt(network, address, usdtContract, fetchImpl) {
     return asset("USDT", network.usdtDecimals, { balance, raw: String(raw) });
 }
 
-async function fetchTronAccount(network, address, fetchImpl) {
-    const base = String(network.rpcUrl || "").replace(/\/$/, "");
-    const response = await fetchImpl(`${base}/v1/accounts/${encodeURIComponent(address)}`, {
-        method: "GET"
-    });
+function tronRpcHeaders(url) {
+    const headers = {
+        Accept: "application/json",
+        "Content-Type": "application/json"
+    };
+    const key = String(env.TRON_API_KEY || "").trim();
 
-    if (!response.ok) {
-        throw new Error(`Tron account HTTP ${response.status}`);
+    if (key && String(url).includes("trongrid.io")) {
+        headers["TRON-PRO-API-KEY"] = key;
     }
 
-    const payload = await response.json();
-    return payload?.data?.[0] || null;
+    return headers;
 }
 
-async function fetchTronNative(accountData, network) {
-    if (!accountData) {
-        return asset("TRX", network.nativeDecimals, { error: "Tron account not found" });
+function tronHosts(network) {
+    return rpcUrlsFor(network).map((url) => String(url).replace(/\/$/, ""));
+}
+
+async function tronFetchJson(fetchImpl, url, options = {}) {
+    const response = await fetchImpl(url, {
+        ...options,
+        headers: {
+            ...tronRpcHeaders(url),
+            ...(options.headers || {})
+        }
+    });
+    const payload = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+        const err = new Error(`Tron HTTP ${response.status}`);
+        err.status = response.status;
+        throw err;
     }
 
-    const raw = String(accountData.balance ?? 0);
-    const balance = formatUnits(raw, network.nativeDecimals);
-    return asset("TRX", network.nativeDecimals, { balance, raw });
+    return payload;
+}
+
+function collectTrc20Entries(accountData) {
+    const rows = accountData?.trc20;
+
+    if (Array.isArray(rows)) {
+        return rows.flatMap((row) => Object.entries(row || {}));
+    }
+
+    if (rows && typeof rows === "object") {
+        return Object.entries(rows);
+    }
+
+    return null;
 }
 
 function tronUsdtRaw(accountData, usdtContract) {
-    const rows = accountData?.trc20;
+    const entries = collectTrc20Entries(accountData);
 
-    if (!Array.isArray(rows)) {
+    if (!entries) {
         return null;
     }
 
-    for (const row of rows) {
-        const match = Object.entries(row || {}).find(([contract]) => (
-            String(contract).toLowerCase() === String(usdtContract).toLowerCase()
-        ));
+    const match = entries.find(([contract]) => sameTronAddress(contract, usdtContract));
+    return match ? String(match[1]) : null;
+}
 
-        if (match) {
-            return String(match[1]);
+function parseConstantResult(payload) {
+    const hex = payload?.constant_result?.[0]
+        || payload?.transaction?.constant_result?.[0]
+        || payload?.result?.constant_result?.[0];
+
+    if (hex == null || hex === "") {
+        return null;
+    }
+
+    return String(hex).startsWith("0x") ? String(hex) : `0x${hex}`;
+}
+
+async function fetchTronAccount(network, address, fetchImpl) {
+    const queryAddress = /^T/i.test(address) ? address : tronAddressToBase58(address);
+    let lastError = null;
+
+    for (const host of tronHosts(network)) {
+        try {
+            const payload = await tronFetchJson(
+                fetchImpl,
+                `${host}/v1/accounts/${encodeURIComponent(queryAddress)}`
+            );
+            if (payload?.data?.[0]) {
+                return payload.data[0];
+            }
+
+            if (payload && payload.balance != null) {
+                return payload;
+            }
+
+        } catch (err) {
+            lastError = err;
         }
     }
 
-    return "0";
+    throw lastError || new Error("Tron account HTTP failed");
 }
 
-async function fetchTronUsdt(accountData, network, usdtContract) {
+async function fetchTronNativeFromWallet(network, address, fetchImpl) {
+    const visibleAddress = /^T/i.test(address) ? address : tronAddressToBase58(address);
+    let lastError = null;
+
+    for (const host of tronHosts(network)) {
+        try {
+            const payload = await tronFetchJson(fetchImpl, `${host}/wallet/getaccount`, {
+                method: "POST",
+                body: JSON.stringify({
+                    address: visibleAddress,
+                    visible: true
+                })
+            });
+            const raw = payload?.balance;
+
+            if (raw == null && !payload?.address) {
+                continue;
+            }
+
+            return String(raw ?? 0);
+        } catch (err) {
+            lastError = err;
+        }
+    }
+
+    throw lastError || new Error("Tron native balance unavailable");
+}
+
+async function fetchTronNative(accountData, network, address, fetchImpl) {
+    if (accountData && (accountData.balance != null || Array.isArray(accountData.trc20) || accountData.address)) {
+        const raw = String(accountData.balance ?? 0);
+        return asset("TRX", network.nativeDecimals, {
+            balance: formatUnits(raw, network.nativeDecimals),
+            raw
+        });
+    }
+
+    const raw = await fetchTronNativeFromWallet(network, address, fetchImpl);
+    return asset("TRX", network.nativeDecimals, {
+        balance: formatUnits(raw, network.nativeDecimals),
+        raw
+    });
+}
+
+async function fetchTronUsdtByCall(network, address, usdtContract, fetchImpl) {
+    const owner = /^T/i.test(address) ? address : tronAddressToBase58(address);
+    const token = /^T/i.test(usdtContract) ? usdtContract : tronAddressToBase58(usdtContract);
+    const parameter = tronAddressToHex20(address).padStart(64, "0");
+    let lastError = null;
+
+    for (const host of tronHosts(network)) {
+        try {
+            const payload = await tronFetchJson(fetchImpl, `${host}/wallet/triggerconstantcontract`, {
+                method: "POST",
+                body: JSON.stringify({
+                    owner_address: owner,
+                    contract_address: token,
+                    function_selector: "balanceOf(address)",
+                    parameter,
+                    visible: true
+                })
+            });
+            const raw = parseConstantResult(payload);
+
+            if (raw == null) {
+                lastError = new Error(payload?.result?.message || "Empty TRC-20 constant_result");
+                continue;
+            }
+
+            return String(BigInt(raw));
+        } catch (err) {
+            lastError = err;
+        }
+    }
+
+    throw lastError || new Error("TRC-20 balanceOf failed");
+}
+
+async function fetchTronUsdt(accountData, network, usdtContract, address, fetchImpl) {
     if (!usdtContract) {
         return asset("USDT", network.usdtDecimals, {
             error: "Missing TRON_USDT_CONTRACT"
         });
     }
 
-    const raw = tronUsdtRaw(accountData, usdtContract);
+    let raw = tronUsdtRaw(accountData, usdtContract);
 
     if (raw == null) {
-        return asset("USDT", network.usdtDecimals, { error: "TRC-20 balance unavailable" });
+        raw = await fetchTronUsdtByCall(network, address, usdtContract, fetchImpl);
     }
 
     return asset("USDT", network.usdtDecimals, {
@@ -277,13 +412,25 @@ async function fetchAccountBalance(account, deps = {}) {
                 }
             }
         } else if (network.namespace === "tron") {
+            let accountData = null;
+
             try {
-                const accountData = await fetchTronAccount(network, address, fetchImpl);
-                native = await fetchTronNative(accountData, network);
-                usdt = await fetchTronUsdt(accountData, network, contracts.usdt);
+                accountData = await fetchTronAccount(network, address, fetchImpl);
             } catch (err) {
-                logger.error({ err, chainId: network.chainId }, "Tron balance read failed");
+                logger.warn({ err: { message: err.message }, chainId: network.chainId }, "Tron account REST failed; trying wallet RPC");
+            }
+
+            try {
+                native = await fetchTronNative(accountData, network, address, fetchImpl);
+            } catch (err) {
+                logger.error({ err, chainId: network.chainId }, "TRX balance read failed");
                 native = asset("TRX", network.nativeDecimals, { error: err.message });
+            }
+
+            try {
+                usdt = await fetchTronUsdt(accountData, network, contracts.usdt, address, fetchImpl);
+            } catch (err) {
+                logger.error({ err, chainId: network.chainId }, "TRC-20 USDT balance read failed");
                 usdt = asset("USDT", network.usdtDecimals, { error: err.message });
             }
         }

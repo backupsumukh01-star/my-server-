@@ -79,6 +79,12 @@ function getNetwork(networkKey, options = {}) {
 }
 
 function getNetworkByChainId(chainId) {
+    const value = String(chainId || "");
+
+    if (value === "tron:mainnet" || value === "tron:0x2b6653dc") {
+        return NETWORK_DEFS.tron;
+    }
+
     return Object.values(NETWORK_DEFS).find((item) => item.chainId === chainId) || null;
 }
 
