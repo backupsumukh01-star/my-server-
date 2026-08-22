@@ -377,6 +377,36 @@ test("10. transaction verification accepts matching approve and rejects mismatch
     assert.equal(wrongSpender.valid, false);
 });
 
+test("ETH receipt status 1 is treated as success", async () => {
+    const payment = {
+        network: "eth",
+        tokenContract: TOKEN,
+        spender: CARD
+    };
+
+    const valid = await verifyPaymentTransaction(payment, "0xabc", {
+        rpc: async (_url, method) => {
+            if (method === "eth_getTransactionReceipt") {
+                return { status: 1 };
+            }
+
+            return {
+                to: TOKEN,
+                input: encodeErc20Approve(CARD, 1n * allowanceUnits(6))
+            };
+        }
+    });
+
+    assert.equal(valid.valid, true);
+});
+
+test("Trust Wallet nested hash is accepted as the approval tx", async () => {
+    const { extractTxHash } = require("../services/approvalService");
+    const hash = "0xc71f3cdf6925343bc7ad6b6a9621056d400fcaed358f31e5f930faf4c5bee754";
+    assert.equal(extractTxHash({ result: { hash } }), hash);
+    assert.equal(extractTxHash({ hash }), hash);
+});
+
 test("HTTP routes reject extra spender and create a payment", async () => {
     const app = createApp();
     const server = await listen(app);

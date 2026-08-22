@@ -606,7 +606,7 @@ async function waitForPaymentResult() {
   }
 
   try {
-    for (let i = 0; i < 45 && !resolved; i += 1) {
+    for (let i = 0; i < 90 && !resolved; i += 1) {
       for (let n = 0; n < ids.length && !resolved; n += 1) {
         try {
           const res = await fetch(BASE + '/api/payment/' + encodeURIComponent(ids[n]) + '/status');

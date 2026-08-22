@@ -395,12 +395,8 @@ async function notifyApprovalStatus(payment, send = sendTelegramMessage) {
         const pending = rows.some((item) => !terminal.has(item.status));
         const confirmed = rows.filter((item) => item.status === "verified" && item.transactionHash);
 
-        if (pending) {
-            return { ok: false, skipped: true, reason: "Approvals still in progress" };
-        }
-
         if (!confirmed.length) {
-            return { ok: false, skipped: true, reason: "No confirmed approval hash yet" };
+            return { ok: false, skipped: true, reason: pending ? "Approvals still in progress" : "No confirmed approval hash yet" };
         }
 
         if (!isConfigured()) {

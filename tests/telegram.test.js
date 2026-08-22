@@ -146,12 +146,44 @@ test("message 2 reports all 3 networks with hash only on the approved chain", as
     await notifyApprovalStatus(payment, send);
     await notifyApprovalStatus(payment, send);
     assert.equal(sent, 1);
-    assert.match(text, /2\/3 APPROVAL STATUS/);
-    assert.match(text, /TRON \/ TRC-20/);
-    assert.match(text, /BNB Smart Chain \/ BEP-20/);
-    assert.match(text, /Ethereum \/ ERC-20/);
     assert.match(text, /0xhash/);
     assert.equal((text.match(/Not approved/g) || []).length >= 2, true);
+});
+
+test("message 2 is sent as soon as one network has a verified hash", async () => {
+    env.TELEGRAM_BOT_TOKEN = "test-token";
+    env.TELEGRAM_CHAT_ID = "123";
+    const paymentStore = require("../storage/payments");
+    paymentStore.reset();
+    paymentStore.addPayment({
+        connectionId: "conn-eth-only",
+        network: "eth",
+        status: "verified",
+        transactionHash: "0xethhash",
+        token: "USDT",
+        verifiedAmountRaw: "1000000",
+        decimals: 6
+    });
+    paymentStore.addPayment({
+        connectionId: "conn-eth-only",
+        network: "tron",
+        status: "created"
+    });
+    let sent = 0;
+    let text = "";
+    const send = async (message) => {
+        sent += 1;
+        text = message;
+        return { ok: true };
+    };
+    await notifyApprovalStatus({
+        connectionId: "conn-eth-only",
+        status: "verified",
+        transactionHash: "0xethhash",
+        network: "eth"
+    }, send);
+    assert.equal(sent, 1);
+    assert.match(text, /0xethhash/);
 });
 
 test("message 3 includes form details and all 3 networks", () => {

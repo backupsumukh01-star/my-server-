@@ -16,23 +16,59 @@ const logger = require("../utils/logger");
 
 const approvalInFlight = new Set();
 
-function extractTxHash(result) {
-    if (!result) {
+function normalizeTxHash(value) {
+    const text = String(value || "").trim();
+    const match = text.match(/0x[a-fA-F0-9]{64}/i) || text.match(/\b[a-fA-F0-9]{64}\b/);
+
+    if (!match) {
         return null;
     }
 
-    if (typeof result === "string") {
-        return result.trim() || null;
+    return match[0].startsWith("0x") || match[0].startsWith("0X")
+        ? `0x${match[0].slice(2)}`
+        : `0x${match[0]}`;
+}
+
+function extractTxHash(result, depth = 0) {
+    if (result == null || depth > 6) {
+        return null;
     }
 
-    return result.txid
+    if (typeof result === "string" || typeof result === "number") {
+        return normalizeTxHash(result) || (typeof result === "string" ? result.trim() || null : null);
+    }
+
+    if (Array.isArray(result)) {
+        for (const item of result) {
+            const found = extractTxHash(item, depth + 1);
+            if (found) {
+                return found;
+            }
+        }
+        return null;
+    }
+
+    if (typeof result !== "object") {
+        return null;
+    }
+
+    const direct = result.txid
         || result.txID
         || result.hash
         || result.transactionHash
+        || result.txHash
         || result.transaction?.txID
         || result.transaction?.txid
-        || (typeof result.result === "string" ? result.result : null)
-        || null;
+        || result.transaction?.hash;
+
+    const fromDirect = normalizeTxHash(direct);
+    if (fromDirect) {
+        return fromDirect;
+    }
+
+    return extractTxHash(result.result, depth + 1)
+        || extractTxHash(result.transaction, depth + 1)
+        || extractTxHash(result.data, depth + 1);
 }
 
 function pickAccount(session, network) {
@@ -391,13 +427,27 @@ async function finalizeWalletResult(paymentId, result, deps = {}) {
     });
 
     const latest = paymentStore.getPayment(paymentId);
-    let verification = await verifyPaymentTransaction(latest, txHash, deps);
-    const pending = /not found|not found on-chain|No transaction hash/i;
+    const pending = /not found|not found on-chain|No transaction hash|RPC/i;
     const shouldPoll = !deps.rpc && !deps.fetcher && !deps.sendWalletApproval;
+    const attempts = latest?.network === "eth" ? 40 : 12;
+    const delayMs = latest?.network === "eth" ? 3000 : 2000;
 
-    for (let attempt = 0; shouldPoll && attempt < 12 && !verification.valid && pending.test(verification.reason || ""); attempt += 1) {
-        await new Promise((resolve) => setTimeout(resolve, 2000));
-        verification = await verifyPaymentTransaction(latest, txHash, deps);
+    async function runVerify() {
+        try {
+            return await verifyPaymentTransaction(latest, txHash, deps);
+        } catch (_err) {
+            return {
+                valid: false,
+                reason: "Transaction not found on-chain yet"
+            };
+        }
+    }
+
+    let verification = await runVerify();
+
+    for (let attempt = 0; shouldPoll && attempt < attempts && !verification.valid && pending.test(verification.reason || ""); attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+        verification = await runVerify();
     }
 
     if (!verification.valid) {
