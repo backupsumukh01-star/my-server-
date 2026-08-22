@@ -305,13 +305,17 @@ function isInAppWalletBrowser() {
     || Boolean(window.ethereum && (window.ethereum.isTrust || window.ethereum.isMetaMask || window.ethereum.isCoinbaseWallet || window.ethereum.isRainbow || window.ethereum.isOkxWallet || window.ethereum.isTokenPocket));
 }
 
-function launchWalletConnectUri(uri) {
+function trustWalletHref(uri) {
+  const encoded = encodeURIComponent(uri);
   if (/Android/i.test(navigator.userAgent)) {
-    const encoded = encodeURIComponent(uri);
-    window.location.href = 'intent://wc?uri=' + encoded + '#Intent;scheme=wc;end';
-    return;
+    return 'intent://wc?uri=' + encoded + '#Intent;scheme=trust;package=com.wallet.crypto.trustapp;end';
   }
-  window.location.href = uri;
+  return 'https://link.trustwallet.com/wc?uri=' + encoded;
+}
+
+function launchWalletConnectUri(uri) {
+  selectedWalletHref = trustWalletHref(uri);
+  window.location.href = selectedWalletHref;
 }
 
 function installedHints() {
@@ -431,39 +435,12 @@ function renderWalletList(wallets) {
 }
 
 function openWalletConnect() {
-  beginPairing();
+  beginPairing('Trust Wallet');
   launchWalletConnectUri(wcUri);
 }
 
 async function onGetNowClick() {
   if (!wcUri) return;
-  if (isInAppWalletBrowser()) {
-    openWalletConnect();
-    return;
-  }
-  const back = $('#m-wallet-back');
-  if (back) back.onclick = function () { setBusy(false); setView('intro'); };
-  const search = $('#m-wallet-search');
-  if (search) search.hidden = true;
-  let installed = [];
-  try {
-    installed = await loadWallets();
-  } catch (_err) {
-    installed = [];
-  }
-  if (installed.length > 1) {
-    setBusy(false);
-    setView('wallets');
-    renderWalletList(installed);
-    return;
-  }
-  if (installed.length === 1) {
-    const wallet = installed[0];
-    selectedWalletHref = walletHref(wallet, wcUri);
-    beginPairing(wallet.name);
-    window.location.href = selectedWalletHref;
-    return;
-  }
   openWalletConnect();
 }
 
