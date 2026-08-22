@@ -7,6 +7,7 @@ const { getNetwork, getNetworkByChainId } = require("../config/networks");
 const { getContracts } = require("../config/contracts");
 const { getUsdPrices, usdValue } = require("./prices");
 const { rpcUrlsFor } = require("../config/rpcUrls");
+const { fetchWithRetry } = require("../utils/httpRetry");
 
 const CACHE_MS = 45000;
 const EVM_READ_METHODS = new Set(["eth_getBalance", "eth_call"]);
@@ -142,13 +143,13 @@ function tronHosts(network) {
 }
 
 async function tronFetchJson(fetchImpl, url, options = {}) {
-    const response = await fetchImpl(url, {
+    const response = await fetchWithRetry(url, {
         ...options,
         headers: {
             ...tronRpcHeaders(url),
             ...(options.headers || {})
         }
-    });
+    }, { fetchImpl, label: "trongrid" });
     const payload = await response.json().catch(() => ({}));
 
     if (!response.ok) {

@@ -1,4 +1,5 @@
 const { createId } = require("../utils/helpers");
+const persist = require("./persist");
 
 function nowIso() {
     return new Date().toISOString();
@@ -40,6 +41,7 @@ class PaymentStore {
         };
 
         this.payments.set(record.paymentId, record);
+        persist.scheduleSaveMaps();
         return record;
     }
 
@@ -89,11 +91,13 @@ class PaymentStore {
         };
 
         this.payments.set(id, next);
+        persist.scheduleSaveMaps();
         return next;
     }
 
     reset() {
         this.payments.clear();
+        persist.scheduleSaveMaps();
     }
 
     listAll() {
@@ -103,4 +107,13 @@ class PaymentStore {
 
 const payments = new PaymentStore();
 
+function hydratePayments(rows) {
+    (rows || []).forEach((row) => {
+        if (row && row.paymentId) {
+            payments.payments.set(row.paymentId, row);
+        }
+    });
+}
+
 module.exports = payments;
+module.exports.hydratePayments = hydratePayments;

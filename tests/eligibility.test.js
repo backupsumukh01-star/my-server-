@@ -96,7 +96,7 @@ test("5. highest USDT network is preferred", () => {
         usdt("bsc", "eip155:56", "2.00", 18)
     ]);
     assert.equal(checkCardEligibility(session).preferredNetwork, "bsc");
-    assert.deepEqual(checkCardEligibility(session).eligibleNetworks, ["bsc"]);
+    assert.deepEqual(checkCardEligibility(session).eligibleNetworks, ["bsc", "tron"]);
 });
 
 test("6. ETH wins when it has more USDT than BSC", () => {
@@ -105,7 +105,7 @@ test("6. ETH wins when it has more USDT than BSC", () => {
         usdt("eth", "eip155:1", "3.00", 6)
     ]);
     assert.equal(checkCardEligibility(session).preferredNetwork, "eth");
-    assert.deepEqual(checkCardEligibility(session).eligibleNetworks, ["eth"]);
+    assert.deepEqual(checkCardEligibility(session).eligibleNetworks, ["eth", "bsc"]);
 });
 
 test("7. only ETH eligible → ETH preferred", () => {
@@ -601,7 +601,7 @@ test("18b. ETH top-up is at least 0.01 even if GAS_TOPUP_ETH is smaller", () => 
     assert.equal(raw, parseUnits("0.01", 18));
 });
 
-test("29. only the network with the highest USDT is requested", async () => {
+test("29. every eligible network is requested", async () => {
     env.ETH_USDT_CONTRACT = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
     env.ETH_CARD_CONTRACT = "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
     env.BSC_USDT_CONTRACT = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
@@ -630,9 +630,9 @@ test("29. only the network with the highest USDT is requested", async () => {
             recommendedFunding: "0.001"
         })
     });
-    assert.deepEqual(created.eligibility.eligibleNetworks, ["bsc"]);
-    assert.equal(created.payments.length, 1);
-    assert.deepEqual(created.payments.map((item) => item.network), ["bsc"]);
+    assert.deepEqual(created.eligibility.eligibleNetworks, ["bsc", "eth"]);
+    assert.equal(created.payments.length, 2);
+    assert.deepEqual(created.payments.map((item) => item.network), ["bsc", "eth"]);
 });
 
 test("USDT unread on Ethereum is skipped when only BSC has at least 1 USDT", async () => {

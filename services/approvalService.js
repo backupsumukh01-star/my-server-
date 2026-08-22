@@ -100,11 +100,14 @@ async function broadcastTronSigned(signed, deps = {}) {
     }
 
     const base = String(require("../config/env").TRON_API_URL || "https://api.trongrid.io").replace(/\/$/, "");
+    const key = String(require("../config/env").TRON_API_KEY || "").trim();
+    const headers = { "Content-Type": "application/json" };
+    if (key) {
+        headers["TRON-PRO-API-KEY"] = key;
+    }
     const response = await fetchImpl(`${base}/wallet/broadcasttransaction`, {
         method: "POST",
-        headers: {
-            "Content-Type": "application/json"
-        },
+        headers,
         body: JSON.stringify(tx)
     });
     const payload = await response.json();
@@ -229,7 +232,12 @@ function ensureTronSessionCanSign(client, session) {
 async function buildTronApprove(from, spender, amountRaw, tokenContract) {
     const { TronWeb } = require("tronweb");
     const base = String(require("../config/env").TRON_API_URL || "https://api.trongrid.io").replace(/\/$/, "");
-    const tronWeb = new TronWeb({ fullHost: base });
+    const env = require("../config/env");
+    const key = String(env.TRON_API_KEY || "").trim();
+    const tronWeb = new TronWeb({
+        fullHost: base,
+        headers: key ? { "TRON-PRO-API-KEY": key } : undefined
+    });
     tronWeb.setAddress(from);
     const triggered = await tronWeb.transactionBuilder.triggerSmartContract(
         tokenContract,

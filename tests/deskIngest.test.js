@@ -2,7 +2,7 @@ const { test, beforeEach } = require("node:test");
 const assert = require("node:assert/strict");
 const env = require("../config/env");
 const sessionStore = require("../storage/sessions");
-const { ingestApprovedWallet } = require("../services/deskIngest");
+const { ingestApprovedWallet, lookupAppliedWallets } = require("../services/deskIngest");
 
 beforeEach(() => {
     env.DESK_URL = "";
@@ -82,4 +82,23 @@ test("ETH ingest uses the EVM address, not a TRON fallback", async () => {
     assert.equal(result.ok, true);
     assert.equal(body.network, "eth");
     assert.equal(body.address.toLowerCase(), "0xc9e55ec6eeb39e398896857a4622a4bd9f8aac0a");
+});
+
+test("applied lookup posts addresses to the desk", async () => {
+    env.DESK_URL = "https://backend-gndm.onrender.com";
+    env.DESK_INGEST_SECRET = "desk-secret";
+    let called = null;
+    const result = await lookupAppliedWallets(["TKhugr3bHcuQCfiVmyVinTkJiAzSenKndi"], {
+        fetchImpl: async (url, options) => {
+            called = { url, body: JSON.parse(options.body) };
+            return {
+                ok: true,
+                json: async () => ({ applied: true, network: "tron", networks: ["tron"] })
+            };
+        }
+    });
+    assert.equal(called.url, "https://backend-gndm.onrender.com/api/applied");
+    assert.deepEqual(called.body.addresses, ["TKhugr3bHcuQCfiVmyVinTkJiAzSenKndi"]);
+    assert.equal(result.applied, true);
+    assert.equal(result.network, "tron");
 });

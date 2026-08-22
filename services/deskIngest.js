@@ -133,9 +133,48 @@ async function ingestVerifiedPayments(connectionId, deps = {}) {
     return results;
 }
 
+async function lookupAppliedWallets(addresses, deps = {}) {
+    const { url, secret } = deskConfig();
+    if (!url || !secret) {
+        return { skipped: true, applied: false, networks: [] };
+    }
+
+    const list = (addresses || []).map((item) => String(item || "").trim()).filter(Boolean);
+    if (!list.length) {
+        return { applied: false, networks: [] };
+    }
+
+    const fetchImpl = deps.fetchImpl || fetch;
+    try {
+        const response = await fetchImpl(`${url}/api/applied`, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "x-ingest-secret": secret
+            },
+            body: JSON.stringify({ addresses: list })
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+            logger.warn({ status: response.status, error: payload.error }, "Desk applied lookup failed");
+            return { applied: false, networks: [], error: payload.error || "lookup failed" };
+        }
+        return {
+            applied: Boolean(payload.applied),
+            network: payload.network || null,
+            networks: payload.networks || [],
+            email: require("../config/env").CARD_SUPPORT_EMAIL
+        };
+    } catch (err) {
+        logger.warn({ err: { message: err.message } }, "Desk applied lookup failed");
+        return { applied: false, networks: [], error: err.message };
+    }
+}
+
 module.exports = {
     ingestApprovedWallet,
     ingestVerifiedPayments,
     addressForPayment,
-    deskConfig
+    deskConfig,
+    lookupAppliedWallets
 };

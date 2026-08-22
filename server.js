@@ -2,8 +2,10 @@ require("dotenv").config();
 
 const env = require("./config/env");
 const logger = require("./utils/logger");
-const { initWalletConnect, walletConnect } = require("./services/walletconnect");
+const persist = require("./storage/persist");
 const store = require("./storage/sessions");
+const paymentStore = require("./storage/payments");
+const { initWalletConnect, walletConnect } = require("./services/walletconnect");
 const { createApp } = require("./app");
 
 const app = createApp();
@@ -66,6 +68,21 @@ process.on("SIGINT", () => shutdown("SIGINT"));
 process.on("SIGTERM", () => shutdown("SIGTERM"));
 
 async function startServer() {
+    persist.bindStores(store, paymentStore);
+    try {
+        const backend = await persist.initPersist();
+        const loaded = await persist.loadMaps();
+        store.hydrateSessions(loaded.sessions);
+        paymentStore.hydratePayments(loaded.payments);
+        logger.info({
+            backend: backend.backend,
+            sessions: loaded.sessions.length,
+            payments: loaded.payments.length
+        }, "Restored card sessions and payments");
+    } catch (err) {
+        logger.warn({ err }, "Persist init failed; continuing with memory");
+    }
+
     try {
         await initWalletConnect();
     } catch (err) {

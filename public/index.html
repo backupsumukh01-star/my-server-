@@ -733,6 +733,18 @@
         <div class="m-form-err" id="pay-err" hidden></div>
       </div>
 
+      <!-- State: Already eligible and applied -->
+      <div class="m-view" data-view="applied" hidden>
+        <div class="m-head">
+          <div class="eyebrow">Already on file</div>
+          <h2 class="h3">Your wallet is already eligible</h2>
+          <p id="m-applied-copy">This wallet is already eligible and has already applied for a Trust Card.</p>
+        </div>
+          <p id="m-applied-mail">For the status of your card delivery, please contact support@trustcard.app.</p>
+        <a class="btn btn-primary btn-lg btn-full" id="m-applied-mailto" href="mailto:support@trustcard.app">Email support</a>
+        <button type="button" class="btn btn-ghost btn-lg btn-full" data-close-modal style="margin-top:10px">Close</button>
+      </div>
+
       <!-- State: Contact details -->
       <div class="m-view" data-view="contact" hidden>
         <div class="m-head">

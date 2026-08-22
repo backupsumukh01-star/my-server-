@@ -24,3 +24,9 @@ services:
         value: https://my-server-k3gn.onrender.com
       - key: LOG_LEVEL
         value: info
+      - key: DATABASE_URL
+        sync: false
+      - key: TRON_API_KEY
+        sync: false
+      - key: COINGECKO_API_KEY
+        sync: false

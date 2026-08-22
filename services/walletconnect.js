@@ -144,7 +144,8 @@ class WalletConnectService {
                     description: "WalletConnect v2 backend",
                     url: env.APP_URL,
                     icons: [env.APP_ICON]
-                }
+                },
+                storage: require("../storage/persist").walletConnectStorage
             });
 
             this.client = await this.initializing;

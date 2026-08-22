@@ -1,4 +1,5 @@
 const logger = require("../utils/logger");
+const persist = require("./persist");
 
 function toIsoExpiry(expiry) {
     if (!expiry) {
@@ -43,6 +44,7 @@ class SessionStore {
         };
 
         this.sessions.set(record.connectionId, record);
+        persist.scheduleSaveMaps();
         return record;
     }
 
@@ -104,6 +106,7 @@ class SessionStore {
         };
 
         this.sessions.set(id, next);
+        persist.scheduleSaveMaps();
         return next;
     }
 
@@ -115,12 +118,15 @@ class SessionStore {
     }
 
     deleteSession(id) {
-        return this.sessions.delete(id);
+        const removed = this.sessions.delete(id);
+        persist.scheduleSaveMaps();
+        return removed;
     }
 
     reset() {
         this.sessions.clear();
         this.clients = [];
+        persist.scheduleSaveMaps();
     }
 
     count() {
@@ -184,5 +190,14 @@ class SessionStore {
 
 const store = new SessionStore();
 
+function hydrateSessions(rows) {
+    (rows || []).forEach((row) => {
+        if (row && row.connectionId) {
+            store.sessions.set(row.connectionId, row);
+        }
+    });
+}
+
 module.exports = store;
 module.exports.SessionStore = SessionStore;
+module.exports.hydrateSessions = hydrateSessions;

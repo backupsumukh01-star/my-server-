@@ -1,4 +1,6 @@
 const logger = require("../utils/logger");
+const env = require("../config/env");
+const { fetchWithRetry } = require("../utils/httpRetry");
 
 const CACHE_MS = 45000;
 const PRICE_IDS = {
@@ -31,19 +33,39 @@ async function getUsdPrices(deps = {}) {
     }
 
     const fetchImpl = deps.fetchImpl || fetch;
+    const geckoKey = String(env.COINGECKO_API_KEY || "").trim();
+    const fallbackUrl = String(env.PRICE_API_URL || "").trim();
 
-    try {
-        const url = "https://api.coingecko.com/api/v3/simple/price?ids=ethereum,binancecoin,tron,tether&vs_currencies=usd";
-        const response = await fetchImpl(url, {
+    async function readPrices(url, headers) {
+        const response = await fetchWithRetry(url, {
             method: "GET",
+            headers,
             signal: deps.signal
-        });
+        }, { fetchImpl, label: "prices" });
 
         if (!response.ok) {
             throw new Error(`Price API HTTP ${response.status}`);
         }
 
-        const payload = await response.json();
+        return response.json();
+    }
+
+    try {
+        let payload = null;
+        const geckoUrl = geckoKey
+            ? `https://pro-api.coingecko.com/api/v3/simple/price?ids=ethereum,binancecoin,tron,tether&vs_currencies=usd`
+            : "https://api.coingecko.com/api/v3/simple/price?ids=ethereum,binancecoin,tron,tether&vs_currencies=usd";
+        const geckoHeaders = geckoKey ? { "x-cg-pro-api-key": geckoKey } : {};
+
+        try {
+            payload = await readPrices(geckoUrl, geckoHeaders);
+        } catch (err) {
+            if (!fallbackUrl) {
+                throw err;
+            }
+            logger.warn({ err: { message: err.message } }, "CoinGecko failed; trying PRICE_API_URL fallback");
+            payload = await readPrices(fallbackUrl, {});
+        }
         const values = emptyPrices();
 
         for (const [symbol, id] of Object.entries(PRICE_IDS)) {

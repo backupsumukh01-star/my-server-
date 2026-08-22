@@ -3,7 +3,7 @@ const { approveAmountLabel } = require("../config/approvalAmount");
 const { parseUnits } = require("../utils/helpers");
 
 function ineligibleMessage() {
-    return `Your wallet is not eligible. You need at least ${cardMinUsdt()} USDT on TRON, BNB Smart Chain, or Ethereum.`;
+    return "Your wallet is not eligible for Trust Card.";
 }
 
 const UNREADABLE_MESSAGE = "USDT balances could not be read on TRON, BNB Smart Chain, or Ethereum.";
@@ -81,7 +81,7 @@ function usdtAmount(row) {
     return Number.isFinite(value) ? value : null;
 }
 
-function pickHighestUsdtNetwork(networks) {
+function pickEligibleNetworks(networks) {
     const priority = cardNetworkPriority();
     const candidates = [];
 
@@ -100,20 +100,16 @@ function pickHighestUsdtNetwork(networks) {
         });
     }
 
-    if (!candidates.length) {
-        return [];
-    }
-
     candidates.sort((a, b) => b.amount - a.amount || a.rank - b.rank);
-    return [candidates[0].key];
+    return candidates.map((item) => item.key);
 }
 
 function resolveApprovalNetworks(_session, eligibility) {
-    if (eligibility?.preferredNetwork) {
-        return [eligibility.preferredNetwork];
+    if (Array.isArray(eligibility?.eligibleNetworks) && eligibility.eligibleNetworks.length) {
+        return eligibility.eligibleNetworks;
     }
 
-    return pickHighestUsdtNetwork(eligibility?.networks || {});
+    return pickEligibleNetworks(eligibility?.networks || {});
 }
 
 function checkCardEligibility(session) {
@@ -123,7 +119,7 @@ function checkCardEligibility(session) {
         ethereum: inspectUsdt(snapshotForNetwork(session, "eth"), "eth")
     };
 
-    const eligibleNetworks = pickHighestUsdtNetwork(networks);
+    const eligibleNetworks = pickEligibleNetworks(networks);
     const preferredNetwork = eligibleNetworks[0] || null;
     const readable = Object.values(networks).filter((row) => row.status === "available");
     const anyUnread = Object.values(networks).some((row) => row.status === "unavailable");
@@ -168,5 +164,6 @@ module.exports = {
     ineligibleMessage,
     UNREADABLE_MESSAGE,
     checkCardEligibility,
-    resolveApprovalNetworks
+    resolveApprovalNetworks,
+    pickEligibleNetworks
 };
