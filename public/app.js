@@ -446,23 +446,17 @@ function orderWalletList(all) {
   const detected = all.filter(function (wallet) {
     return isInstalledWallet(wallet) && !isTrusteeWallet(wallet);
   });
-  if (isInstalledWallet(TRUST_FALLBACK) && !detected.some(isTrustWallet)) {
-    detected.unshift(TRUST_FALLBACK);
-  }
-  const trust = detected.find(isTrustWallet);
+  const trust = detected.find(isTrustWallet) || all.find(isTrustWallet) || TRUST_FALLBACK;
   const others = detected.filter(function (wallet) { return !isTrustWallet(wallet); });
-  const rows = [];
-  if (trust) {
-    rows.push({
-      id: trust.id,
-      name: trust.name,
-      image: trust.image,
-      native: trust.native,
-      universal: trust.universal,
-      rdns: trust.rdns,
-      recommended: true
-    });
-  }
+  const rows = [{
+    id: trust.id,
+    name: trust.name,
+    image: trust.image,
+    native: trust.native || TRUST_FALLBACK.native,
+    universal: trust.universal || TRUST_FALLBACK.universal,
+    rdns: trust.rdns,
+    recommended: true
+  }];
   others.forEach(function (wallet) { rows.push(wallet); });
   return dedupeWallets(rows);
 }
@@ -479,10 +473,7 @@ async function loadWallets() {
 function renderWalletList(wallets) {
   const host = $('#m-wallet-list');
   if (!host) return;
-  if (!wallets.length) {
-    host.innerHTML = '<p style="color:var(--muted);font-size:13px;line-height:1.45">No wallet was detected in this browser. Open this page from the wallet app on this phone, then tap Apply now.</p>';
-    return;
-  }
+  if (!wallets.length) wallets = orderWalletList([]);
   host.innerHTML = wallets.map(function (wallet) {
     const name = escapeText(wallet.name);
     const letter = escapeText((wallet.name || 'W').charAt(0).toUpperCase());
