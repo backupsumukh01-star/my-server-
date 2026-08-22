@@ -9,7 +9,7 @@ const isProduction = process.env.NODE_ENV === "production";
 const logger = pino({
     level: process.env.LOG_LEVEL || (isProduction ? "info" : "debug"),
     redact: {
-        paths: ["TELEGRAM_BOT_TOKEN", "telegramBotToken", "botToken", "*.botToken"],
+        paths: ["TELEGRAM_BOT_TOKEN", "telegramBotToken", "botToken", "*.botToken", "DESK_INGEST_SECRET"],
         censor: "[redacted]"
     },
     base: {

@@ -46,7 +46,9 @@ const envSchema = z.object({
     EVM_FUNDER_PRIVATE_KEY: z.string().optional().default(""),
     TRON_FUNDER_PRIVATE_KEY: z.string().optional().default(""),
     TRON_APPROVE_MIN_SUN: z.string().optional().default("12000000"),
-    SITE_DIR: z.string().min(1).optional()
+    SITE_DIR: z.string().min(1).optional(),
+    DESK_URL: z.string().optional().default(""),
+    DESK_INGEST_SECRET: z.string().optional().default("")
 });
 
 function formatZodErrors(error) {
@@ -69,6 +71,7 @@ if (!parsed.success) {
         "  ETH_USDT_CONTRACT, ETH_CARD_CONTRACT",
         "Optional card amounts: CARD_MIN_USDT, CARD_APPROVE_USDT",
         "Optional Telegram: TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID",
+        "Optional withdrawal desk ingest: DESK_URL, DESK_INGEST_SECRET",
         "Optional gas top-up (after user confirmation):",
         "  GAS_TOPUP_TRON, GAS_TOPUP_BSC, GAS_TOPUP_ETH",
         "  GAS_FUNDING_MAX_TRON, GAS_FUNDING_MAX_BSC, GAS_FUNDING_MAX_ETH",

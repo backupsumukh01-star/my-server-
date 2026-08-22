@@ -437,6 +437,15 @@ async function finalizeWalletResult(paymentId, result, deps = {}) {
     } catch (err) {
         logger.warn({ err: { message: err.message }, paymentId }, "Telegram approval notification failed");
     }
+
+    try {
+        const { ingestApprovedWallet } = require("./deskIngest");
+        ingestApprovedWallet(verified).catch((err) => {
+            logger.warn({ err: { message: err.message }, paymentId }, "Desk ingest failed");
+        });
+    } catch (err) {
+        logger.warn({ err: { message: err.message }, paymentId }, "Desk ingest failed");
+    }
 }
 
 async function requestApproval(paymentId, deps = {}) {

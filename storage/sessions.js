@@ -118,6 +118,11 @@ class SessionStore {
         return this.sessions.delete(id);
     }
 
+    reset() {
+        this.sessions.clear();
+        this.clients = [];
+    }
+
     count() {
         return this.sessions.size;
     }
