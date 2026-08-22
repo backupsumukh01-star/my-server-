@@ -28,7 +28,7 @@ function networkMaxHuman(networkKey) {
     }
 
     if (networkKey === "eth") {
-        return String(env.GAS_FUNDING_MAX_ETH || "0.003").trim();
+        return String(env.GAS_FUNDING_MAX_ETH || "0.01").trim();
     }
 
     return "";
@@ -58,7 +58,18 @@ function configuredMaxRaw(network) {
 }
 
 function autoTopupRaw(network) {
-    return configuredTopupRaw(network) || configuredMaxRaw(network);
+    const configured = configuredTopupRaw(network) || configuredMaxRaw(network);
+
+    if (network.key !== "eth") {
+        return configured;
+    }
+
+    const min = ethMinRaw();
+    if (configured == null || configured < min) {
+        return min;
+    }
+
+    return configured;
 }
 
 function funderPrivateKey(networkKey) {
@@ -117,6 +128,24 @@ function tronMinRaw() {
     return parseUnits(String(env.TRON_MIN_TRX || "12").trim() || "12", network.nativeDecimals);
 }
 
+function ethMinRaw() {
+    const { getNetwork } = require("./networks");
+    const network = getNetwork("eth", { requireContracts: false });
+    return parseUnits(String(env.ETH_MIN_ETH || "0.01").trim() || "0.01", network.nativeDecimals);
+}
+
+function liveEthMeetsMin(currentBalanceRaw) {
+    try {
+        if (currentBalanceRaw == null || currentBalanceRaw === "") {
+            return false;
+        }
+
+        return BigInt(String(currentBalanceRaw)) >= ethMinRaw();
+    } catch (_err) {
+        return false;
+    }
+}
+
 function publicTopup(network, raw) {
     if (raw == null) {
         return null;
@@ -135,5 +164,7 @@ module.exports = {
     hasEvmFunder,
     hasNativeFunder,
     publicTopup,
-    tronMinRaw
+    tronMinRaw,
+    ethMinRaw,
+    liveEthMeetsMin
 };

@@ -144,6 +144,10 @@ async function readEvmBalance(network, from, nativeBalanceRaw, fetchImpl) {
         }
     }
 
+    if (network.key === "eth") {
+        return live;
+    }
+
     return preferLiveNative(live, nativeBalanceRaw);
 }
 

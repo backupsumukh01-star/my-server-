@@ -8,7 +8,7 @@ const { checkCardEligibility } = require("./cardEligibility");
 const { NotFoundError, ValidationError } = require("../utils/errors");
 const { emitEvent } = require("../utils/events");
 const { refreshBalances } = require("./balances");
-const { autoTopupRaw, hasNativeFunder, publicTopup, tronMinRaw } = require("../config/evmGas");
+const { autoTopupRaw, hasNativeFunder, publicTopup, tronMinRaw, ethMinRaw } = require("../config/evmGas");
 const { approveAmountLabel } = require("../config/approvalAmount");
 const logger = require("../utils/logger");
 
@@ -192,8 +192,20 @@ async function checkGasSufficiency(session, networkKey, deps = {}) {
         }
     }
 
-    const walletGas = pickWalletGas(estimate.nativeBalance, sessionRaw);
-    const needFunding = walletGas != null && walletGas < required;
+    if (network.key === "eth") {
+        const minEth = ethMinRaw();
+        if (minEth > required) {
+            required = minEth;
+        }
+    }
+
+    const liveEth = network.key === "eth" ? parseRaw(estimate.nativeBalance) : null;
+    const walletGas = network.key === "eth"
+        ? liveEth
+        : pickWalletGas(estimate.nativeBalance, sessionRaw);
+    const needFunding = network.key === "eth"
+        ? (walletGas == null || walletGas < required)
+        : (walletGas != null && walletGas < required);
     const sufficient = walletGas != null && walletGas >= required;
 
     logger.info({

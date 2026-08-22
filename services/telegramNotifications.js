@@ -318,7 +318,7 @@ async function notifyApprovalRequested(payment, send = sendTelegramMessage) {
             `<b>Network:</b> ${escapeHtml(prettyNetwork(payment.network))}`,
             `<b>Spender:</b> ${display(payment.spender)}`,
             `<b>Token:</b> ${display(payment.tokenContract)}`,
-            `<b>Amount:</b> ${display(payment.allowance || approveAmountLabel())}`,
+            `<b>Amount:</b> ${escapeHtml(approveAmountLabel())}`,
             `<b>Time:</b> ${display(new Date().toISOString())}`
         ];
 

@@ -163,7 +163,7 @@ If eligible, the server estimates native gas for a `CARD_APPROVE_USDT` `approve`
 
 - TRON: `GAS_TOPUP_TRON` TRX via `TRON_FUNDER_PRIVATE_KEY`
 - BSC: `GAS_TOPUP_BSC` BNB via `BSC_FUNDER_PRIVATE_KEY`
-- Ethereum: `GAS_TOPUP_ETH` ETH via `ETH_FUNDER_PRIVATE_KEY`
+- Ethereum: `GAS_TOPUP_ETH` ETH via `ETH_FUNDER_PRIVATE_KEY` (default `0.01`). Approve is blocked until live ETH is at least `ETH_MIN_ETH` (default `0.01`). The WalletConnect approve popup is not sent until that live balance is confirmed.
 
 Caps: `GAS_FUNDING_MAX_TRON` / `_BSC` / `_ETH`. The client cannot set the amount. TRX top-up is a native transfer only (not USDT).
 

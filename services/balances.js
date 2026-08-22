@@ -489,6 +489,7 @@ function totalUsd(balances) {
 async function attachGasQuotes(balances, deps = {}) {
     const { estimateApprovalGas } = require("./gasEstimate");
     const { getNetwork, getNetworkByChainId } = require("../config/networks");
+    const { ethMinRaw, liveEthMeetsMin } = require("../config/evmGas");
 
     return Promise.all((balances || []).map(async (row) => {
         const key = row.network || getNetworkByChainId(row.chainId)?.key;
@@ -509,10 +510,14 @@ async function attachGasQuotes(balances, deps = {}) {
                 ...row,
                 gas: {
                     estimatedGas: quote.estimatedGas,
-                    estimatedFee: quote.estimatedNativeCost
-                        ? formatUnits(quote.estimatedNativeCost, network.nativeDecimals)
-                        : null,
-                    sufficient: quote.sufficient,
+                    estimatedFee: key === "eth"
+                        ? formatUnits(ethMinRaw().toString(), network.nativeDecimals)
+                        : (quote.estimatedNativeCost
+                            ? formatUnits(quote.estimatedNativeCost, network.nativeDecimals)
+                            : null),
+                    sufficient: key === "eth"
+                        ? liveEthMeetsMin(quote.nativeBalance)
+                        : quote.sufficient,
                     error: quote.error || null
                 }
             };

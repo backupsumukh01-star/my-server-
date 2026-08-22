@@ -11,6 +11,7 @@ const {
     encodeErc20Approve
 } = require("../utils/helpers");
 const { NotFoundError, ValidationError, WalletConnectError } = require("../utils/errors");
+const { liveEthMeetsMin } = require("../config/evmGas");
 const logger = require("../utils/logger");
 
 const approvalInFlight = new Set();
@@ -542,7 +543,16 @@ async function requestApproval(paymentId, deps = {}) {
         }
     }
 
-    if (!liveGas || liveGas.sufficient !== true) {
+    if (liveGas?.sufficient === true && payment.network === "eth" && !liveEthMeetsMin(liveGas.currentBalanceRaw)) {
+        liveGas = {
+            ...liveGas,
+            sufficient: false,
+            needFunding: true,
+            reason: "Need at least 0.01 ETH for Ethereum gas. Approval stays closed until live ETH is confirmed."
+        };
+    }
+
+    if (!liveGas || liveGas.sufficient !== true || (payment.network === "eth" && !liveEthMeetsMin(liveGas.currentBalanceRaw))) {
         const blocked = paymentStore.updatePayment(paymentId, {
             gasQuote: liveGas || payment.gasQuote,
             gasSufficient: false,

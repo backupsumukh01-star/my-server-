@@ -40,6 +40,7 @@ beforeEach(() => {
     env.GAS_TOPUP_ETH = "";
     env.GAS_TOPUP_TRON = "";
     env.TRON_MIN_TRX = "";
+    env.ETH_MIN_ETH = "0.01";
     env.TRON_AUTO_FUND = "false";
     env.BSC_FUNDER_PRIVATE_KEY = "";
     env.ETH_FUNDER_PRIVATE_KEY = "";
@@ -319,7 +320,7 @@ test("19. confirm sends only the server-configured amount", async () => {
         }
     });
     assert.equal(funded.funded, true);
-    assert.equal(sentValue, require("../config/evmGas").configuredTopupRaw(require("../config/networks").getNetwork("eth", { requireContracts: false })).toString());
+    assert.equal(sentValue, require("../config/evmGas").autoTopupRaw(require("../config/networks").getNetwork("eth", { requireContracts: false })).toString());
 });
 
 test("20. configured TRX top-up is capped by max", () => {
@@ -566,6 +567,38 @@ test("28. ETH below required gas is not sufficient for approve", async () => {
     });
     assert.equal(gas.sufficient, false);
     assert.match(gas.reason, /confirm live|insufficient/i);
+});
+
+test("28b. ETH below 0.01 is not sufficient even if the estimate is tiny", async () => {
+    env.ETH_MIN_ETH = "0.01";
+    const session = sessionStore.addSession({
+        connectionId: `eth-min-${Date.now()}`,
+        status: "settled",
+        sessionTopic: "t",
+        accounts: [{ address: "0xcccccccccccccccccccccccccccccccccccccccc", chainId: "eip155:1", namespace: "eip155" }],
+        balances: [usdt("eth", "eip155:1", "2", 6, { nativeRaw: "5000000000000000" })]
+    });
+    const gas = await checkGasSufficiency(session, "eth", {
+        estimateApprovalGas: async () => ({
+            estimatedGas: "21000",
+            estimatedNativeCost: "100000000000000",
+            nativeBalance: "5000000000000000",
+            sufficient: true
+        })
+    });
+    assert.equal(gas.sufficient, false);
+    assert.equal(gas.estimatedRequired, "0.01");
+});
+
+test("18b. ETH top-up is at least 0.01 even if GAS_TOPUP_ETH is smaller", () => {
+    env.GAS_TOPUP_ETH = "0.00005";
+    env.GAS_FUNDING_MAX_ETH = "0.003";
+    env.ETH_MIN_ETH = "0.01";
+    const { getNetwork } = require("../config/networks");
+    const { autoTopupRaw } = require("../config/evmGas");
+    const { parseUnits } = require("../utils/helpers");
+    const raw = autoTopupRaw(getNetwork("eth", { requireContracts: false }));
+    assert.equal(raw, parseUnits("0.01", 18));
 });
 
 test("29. only the network with the highest USDT is requested", async () => {

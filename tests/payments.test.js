@@ -305,6 +305,40 @@ test("11. low native gas does not send the approval request", async () => {
     assert.equal(paymentStore.getPayment(created.paymentId).status, "awaiting_gas");
 });
 
+test("tiny live ETH does not send WalletConnect approval even if estimate says sufficient", async () => {
+    const session = seedSession();
+    const created = await createPayment({
+        connectionId: session.connectionId
+    }, { checkGasSufficiency: async () => gasOk });
+
+    let sent = 0;
+    await assert.rejects(
+        () => requestApproval(created.paymentId, {
+            wait: true,
+            client: {},
+            checkGasSufficiency: async () => ({
+                sufficient: true,
+                needFunding: false,
+                network: "eth",
+                nativeSymbol: "ETH",
+                currentBalance: "0.000053",
+                currentBalanceRaw: "53694189976646",
+                estimatedRequired: "0.000006",
+                estimatedRequiredRaw: "6354727416660",
+                reason: "Live native balance covers the 1 USDT approval gas."
+            }),
+            sendWalletApproval: async () => {
+                sent += 1;
+                return "0xhash";
+            }
+        }),
+        ValidationError
+    );
+
+    assert.equal(sent, 0);
+    assert.equal(paymentStore.getPayment(created.paymentId).status, "awaiting_gas");
+});
+
 test("10. transaction verification accepts matching approve and rejects mismatches", async () => {
     const payment = {
         network: "eth",
