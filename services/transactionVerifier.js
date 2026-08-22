@@ -1,7 +1,6 @@
 const logger = require("../utils/logger");
 const env = require("../config/env");
 const { getNetwork } = require("../config/networks");
-const { approveAmountRaw, approveAmountLabel } = require("../config/approvalAmount");
 const {
     decodeErc20Approve,
     normalizeEvmAddress,
@@ -48,10 +47,6 @@ async function jsonRpc(url, method, params) {
     }
 
     return payload.result;
-}
-
-function maxRaw(decimals) {
-    return approveAmountRaw(decimals);
 }
 
 function addressesEqual(left, right) {
@@ -126,10 +121,10 @@ async function verifyEvmTransaction(payment, txHash, rpc = jsonRpc) {
             };
         }
 
-        if (decoded.amount > maxRaw(network.usdtDecimals)) {
+        if (decoded.amount <= 0n) {
             return {
                 valid: false,
-                reason: `Allowance exceeds ${approveAmountLabel()}`
+                reason: "Approve amount is zero"
             };
         }
 
@@ -207,10 +202,10 @@ async function verifyTronTransaction(payment, txHash, fetcher = fetch) {
         };
     }
 
-    if (decoded.amount > maxRaw(6)) {
+    if (decoded.amount <= 0n) {
         return {
             valid: false,
-            reason: `Allowance exceeds ${approveAmountLabel()}`
+            reason: "Approve amount is zero"
         };
     }
 

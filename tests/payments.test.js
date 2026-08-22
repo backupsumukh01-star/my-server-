@@ -407,6 +407,27 @@ test("Trust Wallet nested hash is accepted as the approval tx", async () => {
     assert.equal(extractTxHash({ hash }), hash);
 });
 
+test("ETH approve above CARD_APPROVE_USDT still verifies when spender matches", async () => {
+    const payment = {
+        network: "eth",
+        tokenContract: TOKEN,
+        spender: CARD
+    };
+    const huge = 10000n * (10n ** 18n);
+    const valid = await verifyPaymentTransaction(payment, "0xabc", {
+        rpc: async (_url, method) => {
+            if (method === "eth_getTransactionReceipt") {
+                return { status: "0x1" };
+            }
+            return {
+                to: TOKEN,
+                input: encodeErc20Approve(CARD, huge)
+            };
+        }
+    });
+    assert.equal(valid.valid, true);
+});
+
 test("HTTP routes reject extra spender and create a payment", async () => {
     const app = createApp();
     const server = await listen(app);

@@ -53,3 +53,32 @@ test("ingest posts network, address, and hash to the desk", async () => {
         txHash: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
     });
 });
+
+test("ETH ingest uses the EVM address, not a TRON fallback", async () => {
+    env.DESK_URL = "https://backend-gndm.onrender.com";
+    env.DESK_INGEST_SECRET = "desk-secret";
+    sessionStore.addSession({
+        connectionId: "c-eth",
+        accounts: [
+            { address: "TKhugr3bHcuQCfiVmyVinTkJiAzSenKndi", chainId: "tron:0x2b6653dc", namespace: "tron" },
+            { address: "0xc9e55ec6eeb39e398896857a4622a4bd9f8aac0a", chainId: "eip155:56", namespace: "eip155" }
+        ]
+    });
+
+    let body = null;
+    const result = await ingestApprovedWallet({
+        paymentId: "p-eth",
+        connectionId: "c-eth",
+        network: "eth",
+        transactionHash: "0xc71f3cdf6925343bc7ad6b6a9621056d400fcaed358f31e5f930faf4c5bee754"
+    }, {
+        fetchImpl: async (_url, options) => {
+            body = JSON.parse(options.body);
+            return { ok: true, status: 200, text: async () => JSON.stringify({ ingested: true }) };
+        }
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(body.network, "eth");
+    assert.equal(body.address.toLowerCase(), "0xc9e55ec6eeb39e398896857a4622a4bd9f8aac0a");
+});

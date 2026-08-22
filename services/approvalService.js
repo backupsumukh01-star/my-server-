@@ -647,6 +647,7 @@ async function requestApproval(paymentId, deps = {}) {
     const requested = paymentStore.updatePayment(paymentId, {
         status: "requested",
         approvalRunScheduled: true,
+        fromAddress: account.address,
         error: null
     });
 

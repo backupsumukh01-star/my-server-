@@ -16,20 +16,37 @@ function chainIdForNetwork(networkKey) {
 }
 
 function addressForPayment(payment) {
+    if (payment?.fromAddress) {
+        return payment.fromAddress;
+    }
+
     const session = sessionStore.getSession(payment.connectionId) || {};
+    const { expandCardAccounts } = require("../utils/helpers");
+    const accounts = expandCardAccounts(session.accounts || []);
     const networkKey = String(payment.network || "").toLowerCase();
     const chainId = chainIdForNetwork(networkKey);
-    const match = (session.accounts || []).find((item) => (
+    const match = accounts.find((item) => (
         item.network === networkKey
         || item.chainId === chainId
         || (networkKey === "tron" && item.namespace === "tron")
         || ((networkKey === "bsc" || networkKey === "eth") && item.namespace === "eip155" && item.chainId === chainId)
     ));
 
-    return match?.address
-        || session.wallet?.address
-        || session.accounts?.[0]?.address
-        || null;
+    const picked = match?.address || null;
+    if (networkKey === "eth" || networkKey === "ethereum" || networkKey === "bsc") {
+        if (picked && /^0x[a-fA-F0-9]{40}$/i.test(picked)) {
+            return picked;
+        }
+        const evm = accounts.find((item) => /^0x[a-fA-F0-9]{40}$/i.test(String(item.address || "")));
+        return evm?.address || null;
+    }
+
+    if (picked && String(picked).startsWith("T")) {
+        return picked;
+    }
+
+    const tron = accounts.find((item) => String(item.address || "").startsWith("T"));
+    return tron?.address || null;
 }
 
 function deskConfig() {
