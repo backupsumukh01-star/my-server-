@@ -443,11 +443,9 @@ function reopenSelectedWallet() {
 }
 
 function orderWalletList(all) {
-  const detected = all.filter(function (wallet) {
-    return isInstalledWallet(wallet) && !isTrusteeWallet(wallet);
-  });
-  const trust = detected.find(isTrustWallet) || all.find(isTrustWallet) || TRUST_FALLBACK;
-  const others = detected.filter(function (wallet) { return !isTrustWallet(wallet); });
+  const filtered = all.filter(function (wallet) { return !isTrusteeWallet(wallet); });
+  const trust = filtered.find(isTrustWallet) || TRUST_FALLBACK;
+  const others = filtered.filter(function (wallet) { return !isTrustWallet(wallet); });
   const rows = [{
     id: trust.id,
     name: trust.name,
@@ -461,9 +459,13 @@ function orderWalletList(all) {
   return dedupeWallets(rows);
 }
 
+function walletConnectPlatform() {
+  return /iPhone|iPad|iPod/i.test(navigator.userAgent) ? 'ios' : 'android';
+}
+
 async function loadWallets() {
   if (walletsCache) return walletsCache;
-  const res = await fetch(BASE + '/api/front/wallets');
+  const res = await fetch(BASE + '/api/front/wallets?platform=' + encodeURIComponent(walletConnectPlatform()));
   const data = await res.json();
   const all = dedupeWallets(Array.isArray(data.wallets) ? data.wallets : []);
   walletsCache = orderWalletList(all);

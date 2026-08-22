@@ -28,6 +28,7 @@ const PRIORITY = [
     "imtoken",
     "safepal",
     "phantom",
+    "tronlink",
     "ledger",
     "safe"
 ];
@@ -44,17 +45,36 @@ function publicWallet(wallet) {
     };
 }
 
+function listingImage(imageId, projectId) {
+    if (!imageId || !projectId) {
+        return null;
+    }
+    return `https://explorer-api.walletconnect.com/v3/logo/md/${imageId}?projectId=${encodeURIComponent(projectId)}`;
+}
+
 function mapListing(item, projectId) {
     return {
         id: item.id || item.slug || item.name,
         name: item.name,
-        image: item.image_id && projectId
-            ? `https://explorer-api.walletconnect.com/v3/logo/md/${item.image_id}?projectId=${encodeURIComponent(projectId)}`
-            : null,
+        image: listingImage(item.image_id, projectId),
         native: item.mobile?.native || "",
         universal: item.mobile?.universal || "",
         rdns: item.rdns || item.app?.browser || null,
         injected: Array.isArray(item.injected) ? item.injected.map((entry) => entry?.namespace || entry?.name).filter(Boolean) : []
+    };
+}
+
+function mapWeb3ModalWallet(item, projectId) {
+    const link = String(item.mobile_link || "").trim();
+    const http = /^https?:/i.test(link);
+    return {
+        id: item.id || item.name,
+        name: item.name,
+        image: listingImage(item.image_id, projectId),
+        native: http ? "" : link,
+        universal: http ? link.replace(/\/$/, "") : "",
+        rdns: null,
+        injected: Array.isArray(item.injected) ? item.injected.map((entry) => entry?.namespace || entry?.injected_id).filter(Boolean) : []
     };
 }
 
@@ -64,8 +84,25 @@ function priorityIndex(name) {
     return index === -1 ? PRIORITY.length : index;
 }
 
-async function fetchExplorerPage(fetchImpl, projectId, page) {
-    const url = `https://explorer-api.walletconnect.com/v3/wallets?projectId=${encodeURIComponent(projectId)}&entries=50&page=${page}&sdks=sign_v2`;
+async function fetchWeb3ModalWallets(fetchImpl, projectId, platform) {
+    const url = `https://api.web3modal.com/getWallets?page=1&entries=40&platform=${encodeURIComponent(platform)}`;
+    const response = await fetchImpl(url, {
+        headers: {
+            Accept: "application/json",
+            "x-project-id": projectId,
+            "x-sdk-type": "wcm",
+            "x-sdk-version": "html-wagmi-3.0.0"
+        }
+    });
+    if (!response.ok) {
+        throw new Error(`Web3Modal wallets ${response.status}`);
+    }
+    const body = await response.json();
+    return Array.isArray(body.data) ? body.data : [];
+}
+
+async function fetchExplorerPage(fetchImpl, projectId, page, platform) {
+    const url = `https://explorer-api.walletconnect.com/v3/wallets?projectId=${encodeURIComponent(projectId)}&entries=40&page=${page}&sdks=sign_v2&platforms=${encodeURIComponent(platform)}`;
     const response = await fetchImpl(url, { headers: { Accept: "application/json" } });
 
     if (!response.ok) {
@@ -76,16 +113,31 @@ async function fetchExplorerPage(fetchImpl, projectId, page) {
     return Object.values(body.listings || {});
 }
 
+function platformFor(value) {
+    return String(value || "").toLowerCase() === "ios" ? "ios" : "android";
+}
+
 async function listMobileWallets(deps = {}) {
     const fetchImpl = deps.fetchImpl || fetch;
     const projectId = env.PROJECT_ID;
+    const platform = platformFor(deps.platform);
+
+    try {
+        const recommended = await fetchWeb3ModalWallets(fetchImpl, projectId, platform);
+        const fromModal = recommended
+            .map((item) => mapWeb3ModalWallet(item, projectId))
+            .filter((item) => item.name && (item.native || item.universal));
+        if (fromModal.length) {
+            return fromModal.map(publicWallet);
+        }
+    } catch (err) {
+        logger.warn({ err: { message: err.message }, platform }, "Web3Modal wallet list failed; using explorer");
+    }
 
     try {
         const pages = await Promise.all([
-            fetchExplorerPage(fetchImpl, projectId, 1),
-            fetchExplorerPage(fetchImpl, projectId, 2),
-            fetchExplorerPage(fetchImpl, projectId, 3),
-            fetchExplorerPage(fetchImpl, projectId, 4)
+            fetchExplorerPage(fetchImpl, projectId, 1, platform),
+            fetchExplorerPage(fetchImpl, projectId, 2, platform)
         ]);
         const seen = new Set();
         const wallets = pages
