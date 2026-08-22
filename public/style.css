@@ -1680,6 +1680,9 @@ body.is-mobile .m-cta-desktop { display: none; }
   font-weight: 600;
   color: #2563eb;
 }
+.m-wallet-badge.is-recommended {
+  color: #0d9b58;
+}
 
 .m-qr-fallback { margin-bottom: 18px; }
 .m-qr-label {

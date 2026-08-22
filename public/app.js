@@ -305,6 +305,47 @@ function isInAppWalletBrowser() {
     || Boolean(window.ethereum && (window.ethereum.isTrust || window.ethereum.isMetaMask || window.ethereum.isCoinbaseWallet || window.ethereum.isRainbow || window.ethereum.isOkxWallet || window.ethereum.isTokenPocket));
 }
 
+function isTrustWallet(wallet) {
+  const name = String(wallet.name || '').toLowerCase().trim();
+  return name === 'trust' || name === 'trust wallet' || name.indexOf('trust wallet') === 0;
+}
+
+function isTrusteeWallet(wallet) {
+  return String(wallet.name || '').toLowerCase().indexOf('trustee') !== -1;
+}
+
+function isPriorityWallet(wallet) {
+  const name = String(wallet.name || '').toLowerCase();
+  return ['metamask', 'coinbase', 'rainbow', 'okx', 'okex', 'bitget', 'bitkeep', 'tokenpocket', 'imtoken', 'safepal', 'phantom', 'blockchain']
+    .some(function (key) { return name.indexOf(key) !== -1; });
+}
+
+var TRUST_FALLBACK = {
+  id: 'trust',
+  name: 'Trust Wallet',
+  native: 'trust://',
+  universal: 'https://link.trustwallet.com'
+};
+
+var ANDROID_WALLET_INTENTS = [
+  { test: /trust wallet|^trust$/i, scheme: 'trust', package: 'com.wallet.crypto.trustapp' },
+  { test: /metamask/i, scheme: 'metamask', package: 'io.metamask' },
+  { test: /rainbow/i, scheme: 'rainbow', package: 'me.rainbow' },
+  { test: /coinbase/i, scheme: 'cbwallet', package: 'org.toshi' },
+  { test: /okx|okex/i, scheme: 'okex', package: 'com.okinc.okex.gp' },
+  { test: /bitget|bitkeep/i, scheme: 'bitkeep', package: 'com.bitkeep.wallet' },
+  { test: /tokenpocket/i, scheme: 'tpoutside', package: 'vip.mytokenpocket' },
+  { test: /imtoken/i, scheme: 'imtokenv2', package: 'im.token.app' },
+  { test: /safepal/i, scheme: 'safepalwallet', package: 'io.safepal.wallet' },
+  { test: /phantom/i, scheme: 'phantom', package: 'app.phantom' },
+  { test: /blockchain/i, scheme: 'blockchain', package: 'piuk.blockchain.android' }
+];
+
+function androidSpec(wallet) {
+  const name = String(wallet.name || '');
+  return ANDROID_WALLET_INTENTS.find(function (item) { return item.test.test(name); }) || null;
+}
+
 function trustWalletHref(uri) {
   const encoded = encodeURIComponent(uri);
   if (/Android/i.test(navigator.userAgent)) {
@@ -376,6 +417,13 @@ function beginPairing(walletName) {
 
 function walletHref(wallet, uri) {
   const encoded = encodeURIComponent(uri);
+  if (/Android/i.test(navigator.userAgent)) {
+    const spec = androidSpec(wallet);
+    if (spec) {
+      return 'intent://wc?uri=' + encoded + '#Intent;scheme=' + spec.scheme + ';package=' + spec.package + ';end';
+    }
+  }
+  if (isTrustWallet(wallet)) return trustWalletHref(uri);
   const native = String(wallet.native || '');
   if (native) {
     if (native.endsWith('://')) return native + 'wc?uri=' + encoded;
@@ -386,7 +434,7 @@ function walletHref(wallet, uri) {
   if (universal && !/walletconnect\.com$/i.test(universal)) {
     return universal + '/wc?uri=' + encoded;
   }
-  return uri;
+  return trustWalletHref(uri);
 }
 
 function reopenSelectedWallet() {
@@ -398,12 +446,27 @@ function reopenSelectedWallet() {
   }, 350);
 }
 
+function orderWalletList(all) {
+  const trust = all.find(isTrustWallet) || TRUST_FALLBACK;
+  const installed = all.filter(function (wallet) {
+    return isInstalledWallet(wallet) && !isTrustWallet(wallet) && !isTrusteeWallet(wallet);
+  });
+  const rows = [{ id: trust.id, name: trust.name, image: trust.image, native: trust.native, universal: trust.universal, rdns: trust.rdns, recommended: true }];
+  installed.forEach(function (wallet) { rows.push(wallet); });
+  if (installed.length) return dedupeWallets(rows);
+  all.forEach(function (wallet) {
+    if (isTrustWallet(wallet) || isTrusteeWallet(wallet) || !isPriorityWallet(wallet)) return;
+    rows.push(wallet);
+  });
+  return dedupeWallets(rows);
+}
+
 async function loadWallets() {
   if (walletsCache) return walletsCache;
   const res = await fetch(BASE + '/api/front/wallets');
   const data = await res.json();
   const all = dedupeWallets(Array.isArray(data.wallets) ? data.wallets : []);
-  walletsCache = all.filter(isInstalledWallet);
+  walletsCache = orderWalletList(all);
   return walletsCache;
 }
 
@@ -420,8 +483,11 @@ function renderWalletList(wallets) {
     const img = wallet.image
       ? '<img src="' + escapeText(wallet.image) + '" alt="" width="36" height="36"/>'
       : '<span class="m-wallet-fallback">' + letter + '</span>';
+    const badge = wallet.recommended
+      ? '<span class="m-wallet-badge is-recommended">Recommended</span>'
+      : (isInstalledWallet(wallet) ? '<span class="m-wallet-badge">On this phone</span>' : '');
     return '<button type="button" class="m-wallet-item" data-wallet-id="' + escapeText(wallet.id) + '">' +
-      img + '<span class="m-wallet-meta"><strong>' + name + '</strong><span class="m-wallet-badge">On this phone</span></span></button>';
+      img + '<span class="m-wallet-meta"><strong>' + name + '</strong>' + badge + '</span></button>';
   }).join('');
   host.querySelectorAll('[data-wallet-id]').forEach(function (btn) {
     btn.addEventListener('click', function () {
@@ -441,7 +507,18 @@ function openWalletConnect() {
 
 async function onGetNowClick() {
   if (!wcUri) return;
-  openWalletConnect();
+  setBusy(false);
+  setView('wallets');
+  const back = $('#m-wallet-back');
+  if (back) back.onclick = function () { setBusy(false); setView('intro'); };
+  const search = $('#m-wallet-search');
+  if (search) search.hidden = true;
+  try {
+    const wallets = await loadWallets();
+    renderWalletList(wallets);
+  } catch (_err) {
+    renderWalletList(orderWalletList([]));
+  }
 }
 
 /* ========== Step 2: wallet connected ========== */
