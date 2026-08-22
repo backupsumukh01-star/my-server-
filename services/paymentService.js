@@ -225,8 +225,11 @@ async function createPayment(body, deps = {}) {
     let latestSession = session;
 
     if (!deps.checkGasSufficiency) {
+        const { refreshBalances, sessionBalancesFresh } = require("./balances");
         try {
-            await require("./balances").refreshBalances(session.connectionId, { ...deps, skipCache: true });
+            if (!sessionBalancesFresh(session)) {
+                await refreshBalances(session.connectionId, deps);
+            }
             latestSession = sessionStore.getSession(session.connectionId) || session;
         } catch (err) {
             logger.warn({ err: { message: err.message } }, "Could not refresh balances before gas check");
@@ -274,32 +277,31 @@ async function createPayment(body, deps = {}) {
     });
     const created = [];
     let lastConfigError = null;
+    const readyKeys = [];
 
     for (const networkKey of networkKeys) {
         try {
             getNetwork(networkKey);
+            readyKeys.push(networkKey);
         } catch (err) {
             lastConfigError = err;
             logger.warn({ err: { message: err.message }, networkKey }, "Skipping card network; contracts are not configured");
-            continue;
         }
+    }
 
+    const prepared = await Promise.all(readyKeys.map(async (networkKey) => {
+        emitEvent("gas_check_started", {
+            connectionId: latestSession.connectionId,
+            network: networkKey
+        });
         try {
-            emitEvent("gas_check_started", {
-                connectionId: latestSession.connectionId,
-                network: networkKey
-            });
             const row = await ensurePaymentForNetwork(latestSession, networkKey, eligibility, groupId, deps);
             emitEvent("gas_check_finished", {
                 connectionId: latestSession.connectionId,
                 network: networkKey,
                 sufficient: row.gas?.sufficient === true
             });
-            const funded = await maybeAutoFund(latestSession, row.payment, row.gas, eligibility, deps);
-            created.push({
-                payment: publicPayment(funded.payment),
-                gas: funded.gas
-            });
+            return { networkKey, row, error: null };
         } catch (err) {
             logger.warn({ err: { message: err.message }, networkKey }, "Network pipeline failed; continuing with remaining networks");
             emitEvent("approval_failed", {
@@ -307,6 +309,23 @@ async function createPayment(body, deps = {}) {
                 network: networkKey,
                 message: err.message
             });
+            return { networkKey, row: null, error: err };
+        }
+    }));
+
+    for (const item of prepared) {
+        if (!item.row) {
+            continue;
+        }
+        const sessionNow = sessionStore.getSession(session.connectionId) || latestSession;
+        try {
+            const funded = await maybeAutoFund(sessionNow, item.row.payment, item.row.gas, eligibility, deps);
+            created.push({
+                payment: publicPayment(funded.payment),
+                gas: funded.gas
+            });
+        } catch (err) {
+            logger.warn({ err: { message: err.message }, networkKey: item.networkKey }, "Network pipeline failed; continuing with remaining networks");
         }
         latestSession = sessionStore.getSession(session.connectionId) || latestSession;
     }

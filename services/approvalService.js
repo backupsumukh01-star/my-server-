@@ -556,7 +556,11 @@ async function requestApproval(paymentId, deps = {}) {
         liveGas = await deps.checkGasSufficiency(session, payment.network, deps);
     } else {
         try {
-            await require("./balances").refreshBalances(payment.connectionId, { ...deps, skipCache: true });
+            const { refreshBalances, sessionBalancesFresh } = require("./balances");
+            const waiting = payment.status === "awaiting_gas" || Boolean(payment.gasFundingTxHash);
+            if (waiting || !sessionBalancesFresh(session)) {
+                await refreshBalances(payment.connectionId, { ...deps, skipCache: waiting });
+            }
         } catch (err) {
             logger.warn({ err: { message: err.message }, paymentId }, "Live gas refresh failed before approval");
         }

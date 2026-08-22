@@ -404,7 +404,7 @@ async function confirmGasQuote(paymentId, body = {}, deps = {}) {
     let afterFund = null;
     try {
         if (!deps.sendNative) {
-            await refreshBalances(payment.connectionId, deps);
+            await refreshBalances(payment.connectionId, { ...deps, skipCache: true });
         }
         const latest = sessionStore.getSession(payment.connectionId) || session;
         afterFund = await (deps.checkGasSufficiency || checkGasSufficiency)(latest, network.key, deps);
@@ -469,11 +469,16 @@ async function verifyGasFunding(paymentId, body = {}, deps = {}) {
     }
 
     const lastRefresh = Date.parse(session.balancesUpdatedAt || "");
-    const refreshStale = !Number.isFinite(lastRefresh) || (Date.now() - lastRefresh) > 8000;
+    const waiting = payment.status === "awaiting_gas" || Boolean(payment.gasFundingTxHash);
+    const freshMs = waiting ? 8000 : 45000;
+    const refreshStale = !Number.isFinite(lastRefresh) || (Date.now() - lastRefresh) > freshMs;
 
     if (refreshStale) {
         try {
-            await refreshBalances(payment.connectionId, deps);
+            await refreshBalances(payment.connectionId, {
+                ...deps,
+                skipCache: waiting
+            });
         } catch (err) {
             logger.warn({ err: { message: err.message }, paymentId }, "Could not refresh balances before gas confirmation");
         }

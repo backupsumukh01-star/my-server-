@@ -38,6 +38,14 @@ function writeCache(key, value) {
     cache.set(key, { at: Date.now(), value });
 }
 
+function sessionBalancesFresh(session, maxMs = CACHE_MS) {
+    const at = Date.parse(session?.balancesUpdatedAt || "");
+    return Number.isFinite(at)
+        && (Date.now() - at) < maxMs
+        && Array.isArray(session?.balances)
+        && session.balances.length > 0;
+}
+
 function asset(symbol, decimals, extra = {}) {
     return {
         symbol,
@@ -582,5 +590,7 @@ module.exports = {
     refreshBalances,
     fetchAccountBalance,
     resetBalanceCache,
-    encodeBalanceOf
+    encodeBalanceOf,
+    sessionBalancesFresh,
+    CACHE_MS
 };
