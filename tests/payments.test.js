@@ -477,6 +477,36 @@ test("top-up hash does not open the approval until the gas has arrived", async (
     assert.equal(payment.status, "verified");
 });
 
+test("a stale gas reading does not open the approval before the top-up arrives", async () => {
+    const session = seedSession();
+    const created = await createPayment({
+        connectionId: session.connectionId
+    }, { checkGasSufficiency: async () => gasOk });
+
+    paymentStore.updatePayment(created.paymentId, {
+        status: "awaiting_gas",
+        gasSufficient: false,
+        gasFundingTxHash: "0xabc",
+        gasBalanceBeforeRaw: gasOk.currentBalanceRaw,
+        gasFundedAt: new Date().toISOString()
+    });
+
+    let sent = 0;
+    const waiting = await requestApproval(created.paymentId, {
+        wait: true,
+        client: {},
+        gasAlreadyArrived: true,
+        checkGasSufficiency: async () => gasOk,
+        sendWalletApproval: async () => {
+            sent += 1;
+            return "0xhash";
+        }
+    });
+
+    assert.equal(waiting.waitingForGas, true);
+    assert.equal(sent, 0);
+});
+
 test("tiny live ETH does not send WalletConnect approval even if estimate says sufficient", async () => {
     const session = seedSession();
     const created = await createPayment({

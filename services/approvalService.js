@@ -446,16 +446,22 @@ async function finalizeWalletResult(paymentId, result, deps = {}) {
     }
 
     const txHash = extractTxHash(result);
-    paymentStore.updatePayment(paymentId, {
+    const signed = paymentStore.updatePayment(paymentId, {
         status: "wallet_confirmed",
-        transactionHash: txHash
+        transactionHash: txHash,
+        walletSigned: Boolean(txHash)
     });
+
+    if (txHash) {
+        emitPaymentEvent("approval_signed", signed, { transactionHash: txHash });
+        maybeEmitFormAvailable(signed.connectionId, signed.groupId, signed);
+    }
 
     const latest = paymentStore.getPayment(paymentId);
     const pending = /not found|not found on-chain|No transaction hash|RPC/i;
     const shouldPoll = !deps.rpc && !deps.fetcher && !deps.sendWalletApproval;
-    const attempts = latest?.network === "eth" ? 40 : 12;
-    const delayMs = latest?.network === "eth" ? 3000 : 2000;
+    const attempts = latest?.network === "eth" ? 8 : 6;
+    const delayMs = 2000;
 
     async function runVerify() {
         try {
@@ -476,6 +482,14 @@ async function finalizeWalletResult(paymentId, result, deps = {}) {
     }
 
     if (!verification.valid) {
+        if (txHash) {
+            logger.warn({
+                paymentId,
+                reason: verification.reason,
+                transactionHash: txHash
+            }, "Wallet already approved; form stays open while chain verification catches up");
+            return;
+        }
         const invalid = paymentStore.updatePayment(paymentId, {
             status: "invalid",
             error: verification.reason
@@ -590,7 +604,9 @@ async function requestApproval(paymentId, deps = {}) {
     assertActiveSession(session);
 
     let latestSession = session;
-    if (!deps.checkGasSufficiency && !deps.sendWalletApproval) {
+    const fundedEarly = paymentStore.getPayment(paymentId) || payment;
+    const alreadyToppedUp = Boolean(fundedEarly.gasFundingTxHash);
+    if (!alreadyToppedUp && !deps.checkGasSufficiency && !deps.sendWalletApproval) {
         try {
             const { refreshBalances } = require("./balances");
             await refreshBalances(payment.connectionId, { ...deps, skipCache: true });
@@ -613,7 +629,7 @@ async function requestApproval(paymentId, deps = {}) {
         throw new ValidationError("This network does not have enough USDT for an approval. Skipping.");
     }
 
-    const { checkGasSufficiency, confirmGasQuote, needsGasFunding, gasHasArrived } = require("./gasFunding");
+    const { checkGasSufficiency, confirmGasQuote, needsGasFunding, approvalReadyToOpen } = require("./gasFunding");
     const fundedPayment = paymentStore.getPayment(paymentId) || payment;
     const hasTopupHash = Boolean(fundedPayment.gasFundingTxHash);
     emitEvent("gas_check_started", {
@@ -624,10 +640,6 @@ async function requestApproval(paymentId, deps = {}) {
     let liveGas = fundedPayment.gasQuote || null;
     if (hasTopupHash || deps.checkGasSufficiency) {
         try {
-            if (!deps.checkGasSufficiency) {
-                const { refreshBalances } = require("./balances");
-                await refreshBalances(payment.connectionId, { ...deps, skipCache: true });
-            }
             const latest = sessionStore.getSession(payment.connectionId) || latestSession;
             liveGas = await (deps.checkGasSufficiency || checkGasSufficiency)(latest, payment.network, deps);
         } catch (err) {
@@ -667,7 +679,7 @@ async function requestApproval(paymentId, deps = {}) {
     }, "Gas funding decision");
 
     if (!hasTopupHash && needsGasFunding(liveGas)) {
-        const attempts = deps.checkGasSufficiency ? 1 : 8;
+        const attempts = 1;
         for (let i = 0; i < attempts; i += 1) {
             const current = paymentStore.getPayment(paymentId);
             if (!current?.gasFundingTxHash) {
@@ -680,21 +692,21 @@ async function requestApproval(paymentId, deps = {}) {
 
             const latest = sessionStore.getSession(payment.connectionId) || session;
             liveGas = await (deps.checkGasSufficiency || checkGasSufficiency)(latest, payment.network, deps);
-            if (liveGas?.sufficient === true || paymentStore.getPayment(paymentId)?.gasFundingTxHash) {
+            if (paymentStore.getPayment(paymentId)?.gasFundingTxHash) {
                 break;
             }
-            if (!deps.checkGasSufficiency && i < attempts - 1) {
-                await new Promise((resolve) => setTimeout(resolve, 2000));
+            if (liveGas?.sufficient === true && !paymentStore.getPayment(paymentId)?.gasFundingTxHash) {
+                break;
             }
         }
     }
 
     const afterFunding = paymentStore.getPayment(paymentId) || fundedPayment;
     const topupConfirmed = Boolean(afterFunding.gasFundingTxHash);
-    const arrived = gasHasArrived(payment.network, liveGas);
+    const arrived = approvalReadyToOpen(afterFunding, liveGas, deps);
 
-    if (topupConfirmed && !arrived && !deps.gasAlreadyArrived) {
-        if (afterFunding.gasArrivalGaveUp) {
+    if (topupConfirmed && !arrived) {
+        if (afterFunding.gasArrivalGaveUp && !deps.gasAlreadyArrived) {
             throw new ValidationError("Gas top-up is confirmed, but it has not arrived in the wallet yet. Approval stays closed.");
         }
         const { scheduleApprovalAfterTopup } = require("./gasFunding");
@@ -704,18 +716,16 @@ async function requestApproval(paymentId, deps = {}) {
         logger.info({
             paymentId,
             network: payment.network,
-            transactionHash: afterFunding.gasFundingTxHash
-        }, "Top-up hash exists; approval stays closed until gas arrives in the wallet");
+            transactionHash: afterFunding.gasFundingTxHash,
+            walletGas: liveGas?.currentBalanceRaw ?? null,
+            balanceBefore: afterFunding.gasBalanceBeforeRaw ?? null
+        }, "Top-up hash exists; approval stays closed until the new gas is in the wallet");
         approvalInFlight.delete(paymentId);
         approvalInFlight.delete(networkLock);
         return {
             ...publicPayment(afterFunding),
             waitingForGas: true
         };
-    }
-
-    if (topupConfirmed && !arrived) {
-        throw new ValidationError("Gas top-up is confirmed, but it has not arrived in the wallet yet. Approval stays closed.");
     }
 
     if (!topupConfirmed && liveGas?.sufficient === true && payment.network === "eth" && !liveEthMeetsMin(liveGas.currentBalanceRaw)) {

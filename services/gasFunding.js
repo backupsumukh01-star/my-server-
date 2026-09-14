@@ -74,7 +74,7 @@ function scheduleApprovalAfterTopup(paymentId, networkKey, deps = {}) {
     }
 }
 
-function gasHasArrived(networkKey, liveGas) {
+function gasHasArrived(networkKey, liveGas, payment) {
     if (!liveGas || liveGas.sufficient !== true) {
         return false;
     }
@@ -83,16 +83,51 @@ function gasHasArrived(networkKey, liveGas) {
         return false;
     }
 
+    const before = parseRaw(payment?.gasBalanceBeforeRaw);
+    const live = parseRaw(liveGas.currentBalanceRaw);
+
+    // A top-up must raise the balance. A stale "enough gas" reading from before
+    // the transfer is not arrival, and must not open the approval.
+    if (payment?.gasFundingTxHash && before != null && (live == null || live <= before)) {
+        return false;
+    }
+
     return true;
 }
 
-function remainingTopupDelay(payment, delayMs) {
-    const delay = Number.isFinite(Number(delayMs))
-        ? Number(delayMs)
-        : approvalDelayAfterTopup(payment.network);
-    const fundedAt = Date.parse(payment.gasFundedAt || "");
-    const started = Number.isFinite(fundedAt) ? fundedAt : Date.now();
-    return Math.max(0, delay - (Date.now() - started));
+function approvalReadyToOpen(payment, liveGas, deps = {}) {
+    if (!gasHasArrived(payment?.network, liveGas, payment)) {
+        return false;
+    }
+
+    if (!payment?.gasFundingTxHash) {
+        return true;
+    }
+
+    const catchUp = walletCatchUpMs(payment.network, deps);
+    const seen = Date.parse(payment.gasVisibleAt || "");
+
+    if (!Number.isFinite(seen)) {
+        paymentStore.updatePayment(payment.paymentId, {
+            gasVisibleAt: new Date().toISOString()
+        });
+        return catchUp <= 0;
+    }
+
+    return Date.now() - seen >= catchUp;
+}
+
+function walletCatchUpMs(networkKey, deps = {}) {
+    if (deps.walletCatchUpMs != null) {
+        return Number(deps.walletCatchUpMs);
+    }
+
+    if (process.env.NODE_ENV === "test") {
+        return 0;
+    }
+
+    const key = String(networkKey || "").toLowerCase();
+    return key === "tron" || key === "trc20" || key === "trx" ? 8000 : 6000;
 }
 
 function sleep(ms) {
@@ -105,15 +140,12 @@ async function waitUntilGasArrived(paymentId, deps = {}) {
         return null;
     }
 
-    const { refreshBalances } = require("./balances");
-    await sleep(remainingTopupDelay(payment, deps.approvalDelayMs));
-
     const timeout = Number.isFinite(Number(deps.gasArrivalTimeoutMs))
         ? Number(deps.gasArrivalTimeoutMs)
-        : 180000;
+        : 90000;
     const poll = Number.isFinite(Number(deps.gasArrivalPollMs))
         ? Number(deps.gasArrivalPollMs)
-        : 2500;
+        : 2000;
     const deadline = Date.now() + Math.max(0, timeout);
 
     while (Date.now() <= deadline) {
@@ -124,23 +156,32 @@ async function waitUntilGasArrived(paymentId, deps = {}) {
 
         let live = null;
         try {
-            if (!deps.checkGasSufficiency) {
-                await refreshBalances(current.connectionId, { ...deps, skipCache: true });
-            }
             const session = sessionStore.getSession(current.connectionId);
             live = await (deps.checkGasSufficiency || checkGasSufficiency)(session, current.network, deps);
         } catch (err) {
             logger.warn({ err: { message: err.message }, paymentId }, "Could not read wallet gas after top-up");
         }
 
-        if (gasHasArrived(current.network, live)) {
-            logger.info({
-                paymentId,
-                network: current.network,
-                walletGas: live.currentBalanceRaw ?? null,
-                transactionHash: current.gasFundingTxHash
-            }, "Top-up gas has arrived in the wallet; opening approval");
-            return live;
+        if (gasHasArrived(current.network, live, current)) {
+            const ready = approvalReadyToOpen(current, live, deps);
+            const latest = paymentStore.getPayment(paymentId) || current;
+            if (!ready) {
+                const seen = Date.parse(latest.gasVisibleAt || "");
+                const waitMs = Number.isFinite(seen)
+                    ? Math.max(0, walletCatchUpMs(current.network, deps) - (Date.now() - seen))
+                    : walletCatchUpMs(current.network, deps);
+                if (waitMs > 0) {
+                    await sleep(Math.min(waitMs, poll));
+                }
+            } else {
+                logger.info({
+                    paymentId,
+                    network: current.network,
+                    walletGas: live.currentBalanceRaw ?? null,
+                    transactionHash: current.gasFundingTxHash
+                }, "Top-up gas has arrived in the wallet; opening approval");
+                return live;
+            }
         }
 
         if (Date.now() + poll > deadline) {
@@ -508,7 +549,8 @@ async function confirmGasQuote(paymentId, body = {}, deps = {}) {
 
     paymentStore.updatePayment(paymentId, {
         gasFundingConfirmed: true,
-        status: "awaiting_gas"
+        status: "awaiting_gas",
+        gasBalanceBeforeRaw: live.currentBalanceRaw != null ? String(live.currentBalanceRaw) : "0"
     });
 
     const network = getNetwork(payment.network, { requireContracts: false });
@@ -686,6 +728,7 @@ async function verifyGasFunding(paymentId, body = {}, deps = {}) {
 module.exports = {
     checkGasSufficiency,
     gasHasArrived,
+    approvalReadyToOpen,
     waitUntilGasArrived,
     scheduleApprovalAfterTopup,
     needsGasFunding,

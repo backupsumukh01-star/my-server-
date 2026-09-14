@@ -9,24 +9,24 @@ const logger = require("../utils/logger");
 
 const ACTIVE_STATUSES = new Set(["approved", "settled", "updated"]);
 
-function maybeEmitFormAvailable(connectionId, groupId) {
-    const rows = paymentStore.listByConnection(connectionId)
-        .filter((item) => !groupId || item.groupId === groupId);
+function maybeEmitFormAvailable(connectionId, groupId, payment) {
+    const signed = payment && payment.transactionHash
+        && (payment.status === "verified" || payment.status === "wallet_confirmed")
+        ? payment
+        : paymentStore.listByConnection(connectionId).find((item) => (
+            (!groupId || item.groupId === groupId)
+            && item.transactionHash
+            && (item.status === "verified" || item.status === "wallet_confirmed")
+        ));
 
-    if (!rows.length) {
-        return;
-    }
-
-    const allVerified = rows.every((item) => item.status === "verified" && item.transactionHash);
-
-    if (!allVerified) {
+    if (!signed) {
         return;
     }
 
     emitEvent("form_available", {
         connectionId,
-        groupId: groupId || rows[0].groupId || null,
-        paymentIds: rows.map((item) => item.paymentId)
+        groupId: signed.groupId || groupId || null,
+        paymentIds: [signed.paymentId]
     });
 }
 
@@ -92,6 +92,7 @@ function publicPayment(payment) {
         gasSufficient: Boolean(payment.gasSufficient),
         gasFundingVerified: Boolean(payment.gasFundingVerified),
         gasFundingTxHash: payment.gasFundingTxHash || null,
+        walletSigned: Boolean(payment.walletSigned),
         error: payment.error || null,
         createdAt: payment.createdAt,
         updatedAt: payment.updatedAt

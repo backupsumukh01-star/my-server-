@@ -68,14 +68,16 @@ function replayVerifiedPayments(res) {
             && String(item.groupId || "") === String(group[0].groupId || "")
         ));
 
-        if (!allForGroup.length || allForGroup.some((item) => item.status !== "verified" || !item.transactionHash)) {
+        const signed = allForGroup.filter((item) => item.status === "verified" && item.transactionHash);
+
+        if (!signed.length) {
             continue;
         }
 
         writeSse(res, "form_available", {
             connectionId,
             groupId: group[0].groupId || null,
-            paymentIds: allForGroup.map((item) => item.paymentId)
+            paymentIds: signed.map((item) => item.paymentId)
         });
     }
 }
