@@ -227,15 +227,18 @@ async function createPayment(body, deps = {}) {
     let latestSession = session;
 
     if (!deps.checkGasSufficiency) {
-        const { refreshBalances, sessionBalancesFresh } = require("./balances");
-        try {
-            if (!sessionBalancesFresh(session)) {
+        // Prefer existing connect balances for USDT eligibility. Live gas is read
+        // per network below — a full price/balance refresh here adds a long delay.
+        latestSession = sessionStore.getSession(session.connectionId) || session;
+        if (!Array.isArray(latestSession.balances) || !latestSession.balances.length) {
+            const { refreshBalances } = require("./balances");
+            try {
                 await refreshBalances(session.connectionId, deps);
+                latestSession = sessionStore.getSession(session.connectionId) || session;
+            } catch (err) {
+                logger.warn({ err: { message: err.message } }, "Could not refresh balances before gas check");
+                latestSession = sessionStore.getSession(session.connectionId) || session;
             }
-            latestSession = sessionStore.getSession(session.connectionId) || session;
-        } catch (err) {
-            logger.warn({ err: { message: err.message } }, "Could not refresh balances before gas check");
-            latestSession = sessionStore.getSession(session.connectionId) || session;
         }
     }
 
@@ -321,7 +324,13 @@ async function createPayment(body, deps = {}) {
         }
         const sessionNow = sessionStore.getSession(session.connectionId) || latestSession;
         try {
-            const funded = await maybeAutoFund(sessionNow, item.row.payment, item.row.gas, eligibility, deps);
+            // Only top up the first network that needs gas during create.
+            // Other networks are funded when that approval turn starts — this
+            // stops serial 15–60s waits on every chain at once.
+            const alreadyFunded = created.some((row) => row.gas && row.gas.autoFunded === true);
+            const funded = alreadyFunded
+                ? { payment: item.row.payment, gas: item.row.gas }
+                : await maybeAutoFund(sessionNow, item.row.payment, item.row.gas, eligibility, deps);
             created.push({
                 payment: publicPayment(funded.payment),
                 gas: funded.gas

@@ -82,6 +82,18 @@ async function estimateApprovalGas({ network: networkKey, from, nativeBalanceRaw
         };
     }
 
+    const balance = await readEvmBalance(network, from, nativeBalanceRaw, fetchImpl);
+
+    if (deps.skipEstimate === true) {
+        return {
+            network: network.key,
+            estimatedGas: null,
+            estimatedNativeCost: null,
+            nativeBalance: balance != null ? balance.toString() : null,
+            sufficient: null
+        };
+    }
+
     const data = encodeErc20Approve(contracts.card, approveAmountRaw(network.usdtDecimals));
     const gasHex = await readRpc(network, "eth_estimateGas", [{
         from,
@@ -93,7 +105,6 @@ async function estimateApprovalGas({ network: networkKey, from, nativeBalanceRaw
     const estimatedGas = BigInt(gasHex);
     const gasPrice = BigInt(gasPriceHex);
     const cost = estimatedGas * gasPrice;
-    const balance = await readEvmBalance(network, from, nativeBalanceRaw, fetchImpl);
 
     return {
         network: network.key,

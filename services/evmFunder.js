@@ -67,11 +67,15 @@ async function sendConfiguredNativeTopup({ networkKey, to }, deps = {}) {
                     value: amount,
                     data: "0x"
                 });
-                const receipt = await tx.wait();
 
-                if (!receipt || (receipt.status !== 1 && receipt.status !== 1n)) {
-                    throw new ValidationError("Gas top-up transaction failed on-chain");
-                }
+                // Return as soon as the top-up is broadcast. Waiting for the receipt
+                // here blocks every network for 15–60s; gas arrival is checked live later.
+                logger.info({
+                    network: network.key,
+                    to: recipient,
+                    hash: tx.hash,
+                    rpc: url
+                }, "EVM gas top-up broadcast");
 
                 return {
                     hash: tx.hash,

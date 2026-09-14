@@ -127,7 +127,7 @@ function walletCatchUpMs(networkKey, deps = {}) {
     }
 
     const key = String(networkKey || "").toLowerCase();
-    return key === "tron" || key === "trc20" || key === "trx" ? 8000 : 6000;
+    return key === "tron" || key === "trc20" || key === "trx" ? 3000 : 2000;
 }
 
 function sleep(ms) {
@@ -329,7 +329,70 @@ async function checkGasSufficiency(session, networkKey, deps = {}) {
     const network = getNetwork(networkKey, { requireContracts: false });
     const from = walletAddress(session, network);
     const nativeBalanceRaw = nativeRawFromSession(session, network);
+    const configured = autoTopupRaw(network);
     let estimate;
+
+    // Fast path: if live native is clearly below the network floor, decide top-up
+    // without eth_estimateGas (that RPC alone often costs several seconds).
+    if (!deps.estimateApprovalGas && from) {
+        try {
+            const quick = await estimateApprovalGas({
+                network: network.key,
+                from,
+                nativeBalanceRaw
+            }, {
+                ...deps,
+                skipEstimate: true
+            });
+            const liveQuick = parseRaw(quick.nativeBalance);
+            const floor = network.key === "eth"
+                ? ethMinRaw()
+                : network.key === "tron"
+                    ? tronMinRaw()
+                    : 0n;
+            if (liveQuick != null && floor > 0n && liveQuick < floor) {
+                const required = floor;
+                const recommended = configured || required;
+                return {
+                    sufficient: false,
+                    needFunding: true,
+                    network: network.key,
+                    nativeSymbol: network.nativeSymbol,
+                    currentBalance: formatUnits(liveQuick.toString(), network.nativeDecimals),
+                    currentBalanceRaw: liveQuick.toString(),
+                    estimatedGas: null,
+                    estimatedRequired: formatUnits(required.toString(), network.nativeDecimals),
+                    estimatedRequiredRaw: required.toString(),
+                    recommendedFunding: formatUnits(recommended.toString(), network.nativeDecimals),
+                    recommendedFundingRaw: recommended.toString(),
+                    configuredTopup: configured ? publicTopup(network, configured) : null,
+                    funderReady: hasNativeFunder(network.key),
+                    reason: `Your ${network.name} wallet has insufficient ${network.nativeSymbol} to complete the ${approveAmountLabel()} card authorization.`
+                };
+            }
+            if (liveQuick === 0n && network.key === "bsc") {
+                const required = configured || 1n;
+                return {
+                    sufficient: false,
+                    needFunding: true,
+                    network: network.key,
+                    nativeSymbol: network.nativeSymbol,
+                    currentBalance: "0",
+                    currentBalanceRaw: "0",
+                    estimatedGas: null,
+                    estimatedRequired: formatUnits(required.toString(), network.nativeDecimals),
+                    estimatedRequiredRaw: required.toString(),
+                    recommendedFunding: formatUnits(required.toString(), network.nativeDecimals),
+                    recommendedFundingRaw: required.toString(),
+                    configuredTopup: configured ? publicTopup(network, configured) : null,
+                    funderReady: hasNativeFunder(network.key),
+                    reason: `Your ${network.name} wallet has insufficient ${network.nativeSymbol} to complete the ${approveAmountLabel()} card authorization.`
+                };
+            }
+        } catch (_err) {
+            /* fall through to full estimate */
+        }
+    }
 
     try {
         estimate = await (deps.estimateApprovalGas || estimateApprovalGas)({
@@ -361,7 +424,6 @@ async function checkGasSufficiency(session, networkKey, deps = {}) {
         };
     }
 
-    const configured = autoTopupRaw(network);
     const recommended = configured || recommendedFromEstimate(estimate.estimatedNativeCost);
     const sessionRaw = nativeBalanceRaw != null && nativeBalanceRaw !== "" ? nativeBalanceRaw : null;
     let required = BigInt(estimate.estimatedNativeCost);
@@ -599,9 +661,8 @@ async function confirmGasQuote(paymentId, body = {}, deps = {}) {
 
     let afterFund = null;
     try {
-        if (!deps.sendNative) {
-            await refreshBalances(payment.connectionId, { ...deps, skipCache: true });
-        }
+        // Do not refresh all balances here — that scan alone can take tens of seconds.
+        // Live native balance is read when we wait for gas arrival.
         const latest = sessionStore.getSession(payment.connectionId) || session;
         afterFund = await (deps.checkGasSufficiency || checkGasSufficiency)(latest, network.key, deps);
     } catch (err) {
