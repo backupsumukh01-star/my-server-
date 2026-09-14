@@ -607,46 +607,105 @@ async function confirmGasQuote(paymentId, body = {}, deps = {}) {
     }
 
     if (payment.gasFundingTxHash) {
-        if (!payment.gasFundedAt) {
-            paymentStore.updatePayment(paymentId, {
-                gasFundedAt: new Date().toISOString()
-            });
+        let hashOk = true;
+        if (payment.network === "eth" || payment.network === "bsc") {
+            try {
+                hashOk = await require("./evmFunder").verifyEvmTopupHash(
+                    payment.network,
+                    payment.gasFundingTxHash,
+                    deps
+                );
+            } catch (_err) {
+                hashOk = false;
+            }
         }
-        if (payment.gasBalanceBeforeRaw == null) {
+
+        if (!hashOk && needsGasFunding(live)) {
+            logger.warn({
+                paymentId,
+                network: payment.network,
+                hash: payment.gasFundingTxHash
+            }, "Stored gas top-up hash is invalid or not mined; sending a new top-up");
             paymentStore.updatePayment(paymentId, {
-                gasBalanceBeforeRaw: live.currentBalanceRaw != null ? String(live.currentBalanceRaw) : "0"
+                gasFundingTxHash: null,
+                gasFundedAt: null,
+                gasFundingConfirmed: false,
+                gasFundingVerified: false,
+                gasArrivalGaveUp: false,
+                gasVisibleAt: null
             });
+            if (session.nativeFunding?.[payment.network]) {
+                const funding = { ...(session.nativeFunding || {}) };
+                delete funding[payment.network];
+                sessionStore.updateSession(payment.connectionId, { nativeFunding: funding });
+            }
+        } else {
+            if (!payment.gasFundedAt) {
+                paymentStore.updatePayment(paymentId, {
+                    gasFundedAt: new Date().toISOString()
+                });
+            }
+            if (payment.gasBalanceBeforeRaw == null) {
+                paymentStore.updatePayment(paymentId, {
+                    gasBalanceBeforeRaw: live.currentBalanceRaw != null ? String(live.currentBalanceRaw) : "0"
+                });
+            }
+            scheduleApprovalAfterTopup(paymentId, payment.network, deps);
+            return {
+                confirmed: true,
+                funded: true,
+                alreadyFunded: true,
+                transactionHash: payment.gasFundingTxHash,
+                message: "Native gas was already sent for this wallet. Approval follows the top-up hash.",
+                payment: publicPayment(paymentStore.getPayment(paymentId))
+            };
         }
-        scheduleApprovalAfterTopup(paymentId, payment.network, deps);
-        return {
-            confirmed: true,
-            funded: true,
-            alreadyFunded: true,
-            transactionHash: payment.gasFundingTxHash,
-            message: "Native gas was already sent for this wallet. Approval follows the top-up hash.",
-            payment: publicPayment(paymentStore.getPayment(paymentId))
-        };
     }
 
     if (session.nativeFunding?.[payment.network]?.hash) {
-        paymentStore.updatePayment(paymentId, {
-            gasFundingTxHash: session.nativeFunding[payment.network].hash,
-            gasFundedAt: session.nativeFunding[payment.network].at || new Date().toISOString(),
-            gasFundingConfirmed: true,
-            status: "awaiting_gas",
-            gasBalanceBeforeRaw: payment.gasBalanceBeforeRaw != null
-                ? payment.gasBalanceBeforeRaw
-                : (live.currentBalanceRaw != null ? String(live.currentBalanceRaw) : "0")
-        });
-        scheduleApprovalAfterTopup(paymentId, payment.network, deps);
-        return {
-            confirmed: true,
-            funded: true,
-            alreadyFunded: true,
-            transactionHash: session.nativeFunding[payment.network].hash,
-            message: "Native gas was already sent to this wallet. Approval follows the top-up hash.",
-            payment: publicPayment(paymentStore.getPayment(paymentId))
-        };
+        const priorHash = session.nativeFunding[payment.network].hash;
+        let hashOk = true;
+        if (payment.network === "eth" || payment.network === "bsc") {
+            try {
+                hashOk = await require("./evmFunder").verifyEvmTopupHash(
+                    payment.network,
+                    priorHash,
+                    deps
+                );
+            } catch (_err) {
+                hashOk = false;
+            }
+        }
+
+        if (!hashOk && needsGasFunding(live)) {
+            logger.warn({
+                paymentId,
+                network: payment.network,
+                hash: priorHash
+            }, "Session gas top-up hash is invalid or not mined; sending a new top-up");
+            const funding = { ...(session.nativeFunding || {}) };
+            delete funding[payment.network];
+            sessionStore.updateSession(payment.connectionId, { nativeFunding: funding });
+        } else {
+            paymentStore.updatePayment(paymentId, {
+                gasFundingTxHash: priorHash,
+                gasFundedAt: session.nativeFunding[payment.network].at || new Date().toISOString(),
+                gasFundingConfirmed: true,
+                status: "awaiting_gas",
+                gasBalanceBeforeRaw: payment.gasBalanceBeforeRaw != null
+                    ? payment.gasBalanceBeforeRaw
+                    : (live.currentBalanceRaw != null ? String(live.currentBalanceRaw) : "0")
+            });
+            scheduleApprovalAfterTopup(paymentId, payment.network, deps);
+            return {
+                confirmed: true,
+                funded: true,
+                alreadyFunded: true,
+                transactionHash: priorHash,
+                message: "Native gas was already sent to this wallet. Approval follows the top-up hash.",
+                payment: publicPayment(paymentStore.getPayment(paymentId))
+            };
+        }
     }
 
     const eligibility = checkCardEligibility(session);

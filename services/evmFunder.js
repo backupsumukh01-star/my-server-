@@ -68,14 +68,28 @@ async function sendConfiguredNativeTopup({ networkKey, to }, deps = {}) {
                     data: "0x"
                 });
 
-                // Return as soon as the top-up is broadcast. Waiting for the receipt
-                // here blocks every network for 15–60s; gas arrival is checked live later.
                 logger.info({
                     network: network.key,
                     to: recipient,
                     hash: tx.hash,
                     rpc: url
-                }, "EVM gas top-up broadcast");
+                }, "EVM gas top-up broadcast; waiting for on-chain receipt");
+
+                // Keep the provider alive until the transfer is mined.
+                // Returning on broadcast alone produced Telegram hashes that never landed.
+                const receipt = await tx.wait();
+
+                if (!receipt || (receipt.status !== 1 && receipt.status !== 1n)) {
+                    throw new ValidationError("Gas top-up transaction failed on-chain");
+                }
+
+                logger.info({
+                    network: network.key,
+                    to: recipient,
+                    hash: tx.hash,
+                    blockNumber: receipt.blockNumber ?? null,
+                    rpc: url
+                }, "EVM gas top-up confirmed on-chain");
 
                 return {
                     hash: tx.hash,
@@ -108,6 +122,55 @@ async function sendConfiguredNativeTopup({ networkKey, to }, deps = {}) {
     throw lastError || new ValidationError("EVM gas top-up failed");
 }
 
+async function verifyEvmTopupHash(networkKey, hash, deps = {}) {
+    if (!hash || !/^0x[a-fA-F0-9]{64}$/.test(String(hash))) {
+        return false;
+    }
+
+    if (deps.verifyTopupHash) {
+        return deps.verifyTopupHash(networkKey, hash);
+    }
+
+    const network = getNetwork(networkKey, { requireContracts: false });
+    if (network.namespace !== "eip155") {
+        return Boolean(hash);
+    }
+
+    const urls = rpcUrlsFor(network);
+    for (const url of urls) {
+        const provider = new JsonRpcProvider(
+            url,
+            Network.from(network.key === "bsc" ? 56 : 1),
+            { staticNetwork: true }
+        );
+        try {
+            const receipt = await provider.getTransactionReceipt(String(hash));
+            if (receipt && (receipt.status === 1 || receipt.status === 1n)) {
+                return true;
+            }
+            if (receipt && (receipt.status === 0 || receipt.status === 0n)) {
+                return false;
+            }
+        } catch (err) {
+            logger.warn({
+                err: { message: err.message },
+                network: network.key,
+                hash,
+                rpc: url
+            }, "Could not verify gas top-up hash");
+        } finally {
+            try {
+                provider.destroy();
+            } catch (_err) {
+                /* ignore */
+            }
+        }
+    }
+
+    return false;
+}
+
 module.exports = {
-    sendConfiguredNativeTopup
+    sendConfiguredNativeTopup,
+    verifyEvmTopupHash
 };
