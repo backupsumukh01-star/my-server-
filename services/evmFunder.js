@@ -75,6 +75,7 @@ async function sendConfiguredNativeTopup({ networkKey, to }, deps = {}) {
 
                 return {
                     hash: tx.hash,
+                    broadcasted: true,
                     from: wallet.address,
                     to: recipient,
                     value: amount.toString()

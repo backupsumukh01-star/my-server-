@@ -33,3 +33,20 @@ test("TRX top-up retries after TronGrid HTTP 429", async () => {
     assert.equal(attempts, 3);
     assert.equal(sent.hash, "retry-hash");
 });
+
+test("failed TRON broadcast with a local tx id is not treated as a top-up", async () => {
+    await assert.rejects(
+        () => sendConfiguredTrxTopup({
+            to: "TLjNziA6414ZqbbcYsLJYVCajfqquRtjHk"
+        }, {
+            retryDelayMs: 0,
+            sendTransaction: async () => ({
+                result: false,
+                code: "CONTRACT_VALIDATE_ERROR",
+                message: "42616e647769647468206572726f72",
+                transaction: { txID: "local-fake-hash" }
+            })
+        }),
+        /Bandwidth error|TRX top-up was not broadcast|Bandwidth/
+    );
+});

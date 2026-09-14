@@ -433,11 +433,13 @@ async function confirmGasQuote(paymentId, body = {}, deps = {}) {
         connectionId: payment.connectionId,
         network: payment.network
     });
-    try {
-        const { notifyGasTopup } = require("./telegramNotifications");
-        notifyGasTopup("started", payment).catch(() => {});
-    } catch (_err) {
-        /* telegram optional */
+    if (payment.network !== "tron") {
+        try {
+            const { notifyGasTopup } = require("./telegramNotifications");
+            notifyGasTopup("started", payment).catch(() => {});
+        } catch (_err) {
+            /* telegram optional */
+        }
     }
 
     const to = walletAddress(session, network);
@@ -445,16 +447,19 @@ async function confirmGasQuote(paymentId, body = {}, deps = {}) {
         ? await require("./tronFunder").sendConfiguredTrxTopup({ to }, deps)
         : await require("./evmFunder").sendConfiguredNativeTopup({ networkKey: network.key, to }, deps);
     const fundedAt = new Date().toISOString();
+    const proven = sent?.broadcasted === true || (Boolean(deps.sendNative) && Boolean(sent?.hash));
 
-    const funding = {
-        ...(session.nativeFunding || {}),
-        [network.key]: {
-            hash: sent.hash,
-            amount: payment.gasQuote.recommendedFunding,
-            at: fundedAt
-        }
-    };
-    sessionStore.updateSession(payment.connectionId, { nativeFunding: funding });
+    if (proven) {
+        const funding = {
+            ...(session.nativeFunding || {}),
+            [network.key]: {
+                hash: sent.hash,
+                amount: payment.gasQuote.recommendedFunding,
+                at: fundedAt
+            }
+        };
+        sessionStore.updateSession(payment.connectionId, { nativeFunding: funding });
+    }
 
     let afterFund = null;
     try {
@@ -469,36 +474,49 @@ async function confirmGasQuote(paymentId, body = {}, deps = {}) {
 
     const ready = Boolean(afterFund && afterFund.sufficient === true);
     const updated = paymentStore.updatePayment(paymentId, {
-        gasFundingConfirmed: true,
-        gasFundingVerified: Boolean(sent?.hash),
-        gasFundingTxHash: sent.hash,
-        gasFundedAt: fundedAt,
+        gasFundingConfirmed: proven,
+        gasFundingVerified: proven,
+        gasFundingTxHash: proven ? sent.hash : null,
+        gasFundedAt: proven ? fundedAt : null,
         gasSufficient: ready,
         gasQuote: afterFund || live,
         status: ready ? "created" : "awaiting_gas"
     });
 
-    emitPaymentEvent("gas_funding_verified", updated, {
-        transactionHash: sent.hash
-    });
-    try {
-        const { notifyGasTopup } = require("./telegramNotifications");
-        notifyGasTopup("confirmed", updated).catch(() => {});
-    } catch (_err) {
-        /* telegram optional */
+    if (proven) {
+        emitPaymentEvent("gas_funding_verified", updated, {
+            transactionHash: sent.hash
+        });
+        try {
+            const { notifyGasTopup } = require("./telegramNotifications");
+            if (network.key === "tron") {
+                notifyGasTopup("started", updated).catch(() => {});
+            }
+            notifyGasTopup("confirmed", updated).catch(() => {});
+        } catch (_err) {
+            /* telegram optional */
+        }
+        scheduleApprovalAfterTopup(paymentId, network.key, deps);
+    } else {
+        logger.warn({
+            paymentId,
+            network: network.key,
+            hash: sent?.hash || null
+        }, "Skipping top-up confirmation because the transfer was not broadcast");
     }
-    scheduleApprovalAfterTopup(paymentId, network.key, deps);
 
     const symbol = payment.gasQuote.nativeSymbol;
     const amount = payment.gasQuote.recommendedFunding;
     return {
         confirmed: true,
-        funded: true,
-        transactionHash: sent.hash,
+        funded: proven,
+        transactionHash: proven ? sent.hash : null,
         amount,
         network: network.key,
         nativeToken: symbol,
-        message: `Sent ${amount} ${symbol}. The approval request opens in your wallet in a few seconds.`,
+        message: proven
+            ? `Sent ${amount} ${symbol}. The approval request opens in your wallet in a few seconds.`
+            : `TRX top-up was not broadcast. No confirmation was sent.`,
         payment: publicPayment(updated)
     };
 }

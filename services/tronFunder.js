@@ -29,8 +29,32 @@ function isRetryable(err) {
         || /429|rate limit|ECONNRESET|ETIMEDOUT|timeout|503|502/i.test(message);
 }
 
-function sleep(ms) {
-    return new Promise((resolve) => setTimeout(resolve, ms));
+function decodeTronMessage(value) {
+    const text = String(value || "").trim();
+    if (!text) {
+        return "TRX top-up transaction failed";
+    }
+    if (/^[0-9a-fA-F]+$/.test(text) && text.length % 2 === 0) {
+        try {
+            const decoded = Buffer.from(text, "hex").toString("utf8").replace(/\0/g, "").trim();
+            if (decoded) {
+                return decoded;
+            }
+        } catch (_err) {
+            /* keep the original text */
+        }
+    }
+    return text;
+}
+
+function acceptedBroadcast(result) {
+    const broadcasted = result?.result === true;
+    const hash = result?.txid || result?.hash || null;
+    return {
+        broadcasted,
+        hash: broadcasted ? hash : null,
+        message: decodeTronMessage(result?.message || result?.code)
+    };
 }
 
 async function sendConfiguredTrxTopup({ to }, deps = {}) {
@@ -78,10 +102,10 @@ async function sendConfiguredTrxTopup({ to }, deps = {}) {
                 })
                 : await sendOnHost(host, key, recipient, amount);
 
-            const hash = result.hash || result.txid || result.transaction?.txID;
+            const accepted = acceptedBroadcast(result);
 
-            if (!result?.result && !hash) {
-                throw new Error(result?.message || "TRX top-up transaction failed");
+            if (!accepted.broadcasted || !accepted.hash) {
+                throw new Error(accepted.message || "TRX top-up was not broadcast");
             }
 
             logger.info({
@@ -90,11 +114,13 @@ async function sendConfiguredTrxTopup({ to }, deps = {}) {
                 value: amount.toString(),
                 from: result.from,
                 host,
-                attempt
+                attempt,
+                hash: accepted.hash
             }, "Sent configured TRX gas top-up");
 
             return {
-                hash,
+                hash: accepted.hash,
+                broadcasted: true,
                 from: result.from,
                 to: recipient,
                 value: amount.toString()
@@ -148,10 +174,18 @@ async function sendOnHost(host, key, recipient, amount) {
     }, "Sending configured TRX gas top-up");
 
     const result = await tronWeb.trx.sendTransaction(recipient, Number(amount));
+    const accepted = acceptedBroadcast(result);
+
+    if (!accepted.broadcasted || !accepted.hash) {
+        throw new Error(accepted.message || "TRX top-up was not broadcast");
+    }
+
     return {
-        ...result,
+        result: true,
+        txid: accepted.hash,
+        hash: accepted.hash,
         from,
-        hash: result.txid || result.transaction?.txID
+        broadcasted: true
     };
 }
 
