@@ -67,7 +67,7 @@ function inspectUsdt(snapshot, key) {
 
     return {
         usdtBalance: String(usdt.balance),
-        eligible: raw >= threshold,
+        eligible: raw > 0n && raw >= threshold,
         status: "available"
     };
 }
@@ -102,6 +102,11 @@ function pickEligibleNetworks(networks) {
 
     candidates.sort((a, b) => b.amount - a.amount || a.rank - b.rank);
     return candidates.map((item) => item.key);
+}
+
+function networkHasEnoughUsdt(session, networkKey) {
+    const eligibility = checkCardEligibility(session);
+    return Boolean(eligibility.eligibleNetworks?.includes(networkKey));
 }
 
 function resolveApprovalNetworks(_session, eligibility) {
@@ -165,5 +170,6 @@ module.exports = {
     UNREADABLE_MESSAGE,
     checkCardEligibility,
     resolveApprovalNetworks,
-    pickEligibleNetworks
+    pickEligibleNetworks,
+    networkHasEnoughUsdt
 };

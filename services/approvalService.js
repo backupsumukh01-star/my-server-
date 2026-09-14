@@ -572,6 +572,30 @@ async function requestApproval(paymentId, deps = {}) {
     const session = sessionStore.getSession(payment.connectionId);
     assertActiveSession(session);
 
+    let latestSession = session;
+    if (!deps.checkGasSufficiency && !deps.sendWalletApproval) {
+        try {
+            const { refreshBalances } = require("./balances");
+            await refreshBalances(payment.connectionId, { ...deps, skipCache: true });
+            latestSession = sessionStore.getSession(payment.connectionId) || session;
+        } catch (err) {
+            logger.warn({ err: { message: err.message }, paymentId }, "Could not refresh USDT before approval");
+        }
+    }
+
+    const { networkHasEnoughUsdt } = require("./cardEligibility");
+    if (!networkHasEnoughUsdt(latestSession, payment.network)) {
+        paymentStore.updatePayment(paymentId, {
+            status: "failed",
+            error: "This network does not have enough USDT for an approval. Skipping."
+        });
+        logger.info({
+            paymentId,
+            network: payment.network
+        }, "Skipping approval because this network does not have enough USDT");
+        throw new ValidationError("This network does not have enough USDT for an approval. Skipping.");
+    }
+
     const { checkGasSufficiency, confirmGasQuote, needsGasFunding } = require("./gasFunding");
     const fundedPayment = paymentStore.getPayment(paymentId) || payment;
     const hasTopupHash = Boolean(fundedPayment.gasFundingTxHash);

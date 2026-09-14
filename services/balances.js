@@ -191,7 +191,9 @@ function tronUsdtRaw(accountData, usdtContract) {
     }
 
     const match = entries.find(([contract]) => sameTronAddress(contract, usdtContract));
-    return match ? String(match[1]) : null;
+    // A listed account with no USDT row means zero. Do not fall back to a
+    // contract call that can invent a balance for a wallet that has none.
+    return match ? String(match[1]) : "0";
 }
 
 function parseConstantResult(payload) {
@@ -294,6 +296,11 @@ async function fetchTronUsdtByCall(network, address, usdtContract, fetchImpl) {
                     visible: true
                 })
             });
+            if (payload?.result?.result === false) {
+                lastError = new Error(payload?.result?.message || "TRC-20 balanceOf was rejected");
+                continue;
+            }
+
             const raw = parseConstantResult(payload);
 
             if (raw == null) {

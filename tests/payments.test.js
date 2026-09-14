@@ -180,6 +180,62 @@ test("8. approval request creation sends a wallet request once", async () => {
     assert.equal(payment.transactionHash, "0xhash");
 });
 
+test("TRON approval is not sent when that wallet only has ETH USDT", async () => {
+    const session = seedSession();
+    sessionStore.updateSession(session.connectionId, {
+        accounts: [
+            ...session.accounts,
+            {
+                account: "tron:0x2b6653dc:TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf",
+                namespace: "tron",
+                chainId: "tron:0x2b6653dc",
+                address: "TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf"
+            }
+        ],
+        balances: [
+            ...session.balances,
+            {
+                network: "tron",
+                chainId: "tron:0x2b6653dc",
+                address: "TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf",
+                native: { symbol: "TRX", balance: "20", raw: "20000000", decimals: 6 },
+                usdt: { symbol: "USDT", balance: "0", raw: "0", decimals: 6 }
+            }
+        ]
+    });
+    env.TRON_USDT_CONTRACT = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t";
+    env.TRON_CARD_CONTRACT = "TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf";
+    const tronPayment = paymentStore.addPayment({
+        connectionId: session.connectionId,
+        network: "tron",
+        tokenContract: env.TRON_USDT_CONTRACT,
+        spender: env.TRON_CARD_CONTRACT,
+        allowance: "1",
+        allowanceRaw: "1000000",
+        decimals: 6,
+        chainId: "tron:0x2b6653dc",
+        status: "created",
+        gasSufficient: true
+    });
+    let sent = 0;
+
+    await assert.rejects(
+        () => requestApproval(tronPayment.paymentId, {
+            wait: true,
+            client: {},
+            checkGasSufficiency: async () => gasOk,
+            sendWalletApproval: async () => {
+                sent += 1;
+                return "fake-tron";
+            }
+        }),
+        /does not have enough USDT/
+    );
+
+    assert.equal(sent, 0);
+    assert.equal(paymentStore.getPayment(tronPayment.paymentId).status, "failed");
+});
+
 test("approval request is not sent a second time for the same payment", async () => {
     const session = seedSession();
     const created = await createPayment({

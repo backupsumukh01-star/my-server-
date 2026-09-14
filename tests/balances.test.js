@@ -231,6 +231,39 @@ test("TRON USDT via balanceOf when REST omits trc20", async () => {
     assert.equal(snapshot.usdt.balance, "12.5");
 });
 
+test("TRON account listing without USDT is zero even if a contract call returns a fake balance", async () => {
+    const snapshot = await fetchAccountBalance({
+        address: "TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf",
+        chainId: "tron:0x2b6653dc",
+        namespace: "tron"
+    }, {
+        skipCache: true,
+        prices: { USDT: 1 },
+        fetchImpl: async (url) => {
+            if (String(url).includes("/v1/accounts/")) {
+                return {
+                    ok: true,
+                    json: async () => ({
+                        data: [{
+                            balance: 1,
+                            trc20: [{ TLa2f6VPqDgRE67v1736s7bJ8Ray5wYjU7: "999000000" }]
+                        }]
+                    })
+                };
+            }
+
+            if (String(url).includes("triggerconstantcontract")) {
+                throw new Error("balanceOf must not invent USDT when the account listing has none");
+            }
+
+            return { ok: false, json: async () => ({}) };
+        }
+    });
+
+    assert.equal(snapshot.usdt.balance, "0");
+    assert.equal(snapshot.usdt.raw, "0");
+});
+
 test("TRON USDT still reads after REST HTTP 429", async () => {
     const snapshot = await fetchAccountBalance({
         address: "TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf",

@@ -698,6 +698,39 @@ test("USDT on BSC does not queue Ethereum when ETH USDT is known to be below 1",
     assert.deepEqual(created.payments.map((item) => item.network), ["bsc"]);
 });
 
+test("ETH USDT does not queue a TRON approval when TRON USDT is zero", async () => {
+    env.ETH_USDT_CONTRACT = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    env.ETH_CARD_CONTRACT = "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+    env.TRON_USDT_CONTRACT = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t";
+    env.TRON_CARD_CONTRACT = "TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf";
+    paymentStore.reset();
+    const session = sessionStore.addSession({
+        connectionId: `eth-only-${Date.now()}`,
+        status: "settled",
+        sessionTopic: "t",
+        accounts: [
+            { address: "0xcccccccccccccccccccccccccccccccccccccccc", chainId: "eip155:1", namespace: "eip155" },
+            { address: "TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf", chainId: "tron:0x2b6653dc", namespace: "tron" }
+        ],
+        balances: [
+            usdt("eth", "eip155:1", "8", 6),
+            usdt("tron", "tron:0x2b6653dc", "0", 6)
+        ]
+    });
+    const created = await createPayment({ connectionId: session.connectionId }, {
+        checkGasSufficiency: async () => ({
+            sufficient: true,
+            network: "eth",
+            nativeSymbol: "ETH",
+            currentBalance: "1",
+            estimatedRequired: "0.001",
+            recommendedFunding: "0.001"
+        })
+    });
+    assert.deepEqual(created.eligibility.eligibleNetworks, ["eth"]);
+    assert.deepEqual(created.payments.map((item) => item.network), ["eth"]);
+});
+
 test("30. TRX top-up is sent only once per wallet", async () => {
     env.TRON_USDT_CONTRACT = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t";
     env.TRON_CARD_CONTRACT = "TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf";

