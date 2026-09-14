@@ -155,19 +155,53 @@ There is no public balance diagnostic HTTP route. `npm run balances:test` docume
 3. Do not put those addresses in frontend code.
 4. The frontend may send only `connectionId`. Spender, token, amount, and network are chosen by the server from eligibility and config.
 
-## Card eligibility and gas
+## Card eligibility and gas (simple guide)
 
-A wallet is eligible if **any** of TRON, BSC, or Ethereum has **at least `CARD_MIN_USDT`** (default `1`). Change `CARD_MIN_USDT` in `.env` to raise or lower that gate. The on-chain approve amount is a separate setting, `CARD_APPROVE_USDT` (default `1`). Auto TRX funding runs only after eligibility on TRON. Unavailable balances are not treated as zero.
+The user never types these amounts. You set them in `.env` (local) or the Render dashboard (live site). Restart the server after you change them.
 
-If eligible, the server estimates native gas for a `CARD_APPROVE_USDT` `approve` (read-only). If gas is short, `POST /api/payment/:id/gas-quote` returns a quote. After the user confirms (`/gas-confirm`), the server may send a **configured** native top-up:
+### If the wallet already has gas
 
-- TRON: `GAS_TOPUP_TRON` TRX via `TRON_FUNDER_PRIVATE_KEY`
-- BSC: `GAS_TOPUP_BSC` BNB via `BSC_FUNDER_PRIVATE_KEY`
-- Ethereum: `GAS_TOPUP_ETH` ETH via `ETH_FUNDER_PRIVATE_KEY` (default `0.01`). Approve is blocked until live ETH is at least `ETH_MIN_ETH` (default `0.01`). The WalletConnect approve popup is not sent until that live balance is confirmed.
+The site checks each network first.
 
-Caps: `GAS_FUNDING_MAX_TRON` / `_BSC` / `_ETH`. The client cannot set the amount. TRX top-up is a native transfer only (not USDT).
+- Enough gas on that network: **no top-up**. The approval request opens in the wallet immediately.
+- Not enough gas: the server sends a top-up, waits a few seconds after the hash, then opens the approval.
+- Gas on all eligible networks: every network skips the top-up. Approvals still open one network at a time (TRON, then BNB, then Ethereum).
 
-Do not auto-send on connect or eligibility. Keys stay in env only and are never returned by the API.
+“Enough” means the wallet already has at least:
+
+- TRON: `TRON_MIN_TRX` (default `12` TRX)
+- Ethereum: `ETH_MIN_ETH` (default `0.01` ETH)
+- BNB: the estimated approve fee (usually a very small amount of BNB)
+
+### How to set the amounts
+
+| What you want | Variable | Example | Meaning |
+| --- | --- | --- | --- |
+| User must hold this much USDT before the card flow starts | `CARD_MIN_USDT` | `1` | Below this, they are not eligible |
+| USDT amount shown in the approval popup | `CARD_APPROVE_USDT` | `1` | This is the approve amount, not the gas |
+| TRX the wallet must already have to skip top-up | `TRON_MIN_TRX` | `12` | Below this, a TRX top-up is sent |
+| TRX sent when they are short | `GAS_TOPUP_TRON` | `12` | Only sent if they do not already have enough |
+| ETH the wallet must already have to skip top-up | `ETH_MIN_ETH` | `0.01` | Below this, an ETH top-up is sent |
+| ETH sent when they are short | `GAS_TOPUP_ETH` | `0.01` | Only sent if they do not already have enough |
+| BNB sent when they are short | `GAS_TOPUP_BSC` | `0.0003` | Only sent if BNB gas is short |
+| Highest TRX / BNB / ETH the server is allowed to send | `GAS_FUNDING_MAX_TRON` / `_BSC` / `_ETH` | `12` / `0.01` / `0.01` | A safety cap. The top-up cannot go above this |
+
+Example:
+
+```env
+CARD_MIN_USDT=1
+CARD_APPROVE_USDT=1
+TRON_MIN_TRX=12
+GAS_TOPUP_TRON=12
+GAS_FUNDING_MAX_TRON=12
+ETH_MIN_ETH=0.01
+GAS_TOPUP_ETH=0.01
+GAS_FUNDING_MAX_ETH=0.01
+GAS_TOPUP_BSC=0.0003
+GAS_FUNDING_MAX_BSC=0.01
+```
+
+The browser cannot change these amounts. Top-up keys stay in env only and are never returned by the API. A TRX top-up is native TRX, not USDT. Do not auto-send on connect or eligibility.
 
 ## API endpoints
 

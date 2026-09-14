@@ -738,26 +738,42 @@ async function waitUntilGasReady(options) {
   return false;
 }
 
+function alreadyHasGas(p) {
+  const gas = (p && p.gas) || {};
+  return gas.sufficient === true || p.gasSufficient === true;
+}
+
 async function ensureGasInBackground(p) {
   const gas = p.gas || {};
   const label = networkLabel(p.network);
   if (p.status === 'verified' && p.transactionHash) return true;
-  setBusy(true, 'Checking ' + label + ' gas', p.network === 'eth'
-    ? 'Need at least 0.01 ETH for fees. Approval stays closed until that live balance is confirmed.'
-    : 'If native gas is low, the server tops it up first.');
-  if (gas.sufficient === true && p.status !== 'awaiting_gas') {
+  if (alreadyHasGas(p)) {
+    setBusy(true, label + ' gas is ready', 'This wallet already has gas. Skipping top-up and opening the approval now.');
     return true;
   }
+  setBusy(true, 'Checking ' + label + ' gas', p.network === 'eth'
+    ? 'Need at least 0.01 ETH for fees. If it is already there, no top-up is sent.'
+    : 'If native gas is low, the server tops it up first. If it is already there, approval opens now.');
+  let topupHash = p.gasFundingTxHash || (gas && gas.transactionHash) || null;
   try {
-    await fetch(BASE + '/api/payment/' + encodeURIComponent(paymentId) + '/gas-confirm', {
+    const res = await fetch(BASE + '/api/payment/' + encodeURIComponent(paymentId) + '/gas-confirm', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: '{}',
     });
+    const data = await res.json().catch(function () { return {}; });
+    if (data && data.transactionHash) topupHash = data.transactionHash;
+    if (!topupHash && data && data.funded === false && data.payment && data.payment.gasSufficient === true) {
+      return true;
+    }
   } catch (_err) {
     /* already funded or not needed */
   }
-  return waitUntilGasReady({ poll: true });
+  if (topupHash) {
+    setBusy(true, 'Top-up confirmed', 'Approval opens in your wallet a few seconds after the top-up hash.');
+    return true;
+  }
+  return waitUntilGasReady({ poll: false });
 }
 
 async function requestCurrentApproval() {
@@ -765,7 +781,10 @@ async function requestCurrentApproval() {
   const p = paymentQueue[paymentIndex];
   const label = networkLabel(p && p.network);
   setLoaderStep('sign');
-  setBusy(true, 'Approve on ' + label, 'Confirm the approval in your wallet. After it succeeds, the application form will open.');
+  const ready = alreadyHasGas(p);
+  setBusy(true, 'Approve on ' + label, ready
+    ? 'Your wallet already has gas. Confirm the approval in your wallet.'
+    : 'Confirm the approval in your wallet. After a top-up, the request opens a few seconds after the hash.');
   try {
     const res = await fetch(BASE + '/api/payment/' + encodeURIComponent(paymentId) + '/request', {
       method: 'POST',

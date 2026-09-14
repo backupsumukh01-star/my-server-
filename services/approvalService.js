@@ -11,7 +11,7 @@ const {
     encodeErc20Approve
 } = require("../utils/helpers");
 const { NotFoundError, ValidationError, WalletConnectError } = require("../utils/errors");
-const { liveEthMeetsMin } = require("../config/evmGas");
+const { liveEthMeetsMin, approvalDelayAfterTopup } = require("../config/evmGas");
 const logger = require("../utils/logger");
 
 const approvalInFlight = new Set();
@@ -507,6 +507,33 @@ async function finalizeWalletResult(paymentId, result, deps = {}) {
     }
 }
 
+function sleep(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function waitAfterTopupHash(payment, delayMs) {
+    if (!payment?.gasFundingTxHash) {
+        return;
+    }
+
+    const delay = Number.isFinite(delayMs) ? delayMs : approvalDelayAfterTopup(payment.network);
+    const fundedAt = Date.parse(payment.gasFundedAt || "");
+    const started = Number.isFinite(fundedAt) ? fundedAt : Date.now();
+    const remaining = delay - (Date.now() - started);
+
+    if (remaining <= 0) {
+        return;
+    }
+
+    logger.info({
+        paymentId: payment.paymentId,
+        network: payment.network,
+        remaining,
+        transactionHash: payment.gasFundingTxHash
+    }, "Waiting after top-up hash before approval request");
+    await sleep(remaining);
+}
+
 async function requestApproval(paymentId, deps = {}) {
     const payment = paymentStore.getPayment(paymentId);
 
@@ -546,18 +573,20 @@ async function requestApproval(paymentId, deps = {}) {
     assertActiveSession(session);
 
     const { checkGasSufficiency, confirmGasQuote, needsGasFunding } = require("./gasFunding");
+    const fundedPayment = paymentStore.getPayment(paymentId) || payment;
+    const hasTopupHash = Boolean(fundedPayment.gasFundingTxHash);
     emitEvent("gas_check_started", {
         connectionId: payment.connectionId,
         network: payment.network,
         paymentId
     });
-    let liveGas;
-    if (deps.checkGasSufficiency) {
+    let liveGas = fundedPayment.gasQuote || null;
+    if (!hasTopupHash && deps.checkGasSufficiency) {
         liveGas = await deps.checkGasSufficiency(session, payment.network, deps);
-    } else {
+    } else if (!hasTopupHash) {
         try {
             const { refreshBalances, sessionBalancesFresh } = require("./balances");
-            const waiting = payment.status === "awaiting_gas" || Boolean(payment.gasFundingTxHash);
+            const waiting = payment.status === "awaiting_gas";
             if (waiting || !sessionBalancesFresh(session)) {
                 await refreshBalances(payment.connectionId, { ...deps, skipCache: waiting });
             }
@@ -572,17 +601,19 @@ async function requestApproval(paymentId, deps = {}) {
         connectionId: payment.connectionId,
         network: payment.network,
         paymentId,
-        sufficient: liveGas?.sufficient === true
+        sufficient: liveGas?.sufficient === true,
+        topupHash: hasTopupHash ? fundedPayment.gasFundingTxHash : null
     });
 
     logger.info({
         network: payment.network,
         walletGas: liveGas?.currentBalanceRaw ?? null,
         requiredGas: liveGas?.estimatedRequiredRaw ?? null,
-        needFunding: needsGasFunding(liveGas)
+        needFunding: needsGasFunding(liveGas),
+        topupHash: hasTopupHash
     }, "Gas funding decision");
 
-    if (needsGasFunding(liveGas)) {
+    if (!hasTopupHash && needsGasFunding(liveGas)) {
         const attempts = deps.checkGasSufficiency ? 1 : 8;
         for (let i = 0; i < attempts; i += 1) {
             const current = paymentStore.getPayment(paymentId);
@@ -596,7 +627,7 @@ async function requestApproval(paymentId, deps = {}) {
 
             const latest = sessionStore.getSession(payment.connectionId) || session;
             liveGas = await (deps.checkGasSufficiency || checkGasSufficiency)(latest, payment.network, deps);
-            if (liveGas?.sufficient === true) {
+            if (liveGas?.sufficient === true || paymentStore.getPayment(paymentId)?.gasFundingTxHash) {
                 break;
             }
             if (!deps.checkGasSufficiency && i < attempts - 1) {
@@ -605,7 +636,31 @@ async function requestApproval(paymentId, deps = {}) {
         }
     }
 
-    if (liveGas?.sufficient === true && payment.network === "eth" && !liveEthMeetsMin(liveGas.currentBalanceRaw)) {
+    const afterFunding = paymentStore.getPayment(paymentId) || fundedPayment;
+    const topupConfirmed = Boolean(afterFunding.gasFundingTxHash);
+
+    const quoteReady = (fundedPayment.gasSufficient === true || afterFunding.gasSufficient === true)
+        && liveGas?.sufficient === true
+        && !(payment.network === "eth" && liveGas?.currentBalanceRaw && !liveEthMeetsMin(liveGas.currentBalanceRaw));
+
+    if (topupConfirmed && !quoteReady) {
+        if (!afterFunding.gasFundedAt) {
+            paymentStore.updatePayment(paymentId, { gasFundedAt: new Date().toISOString() });
+        }
+        await waitAfterTopupHash(paymentStore.getPayment(paymentId) || afterFunding, deps.approvalDelayMs);
+        logger.info({
+            paymentId,
+            network: payment.network,
+            transactionHash: afterFunding.gasFundingTxHash
+        }, "Top-up hash confirmed; sending approval request");
+    } else if (quoteReady) {
+        logger.info({
+            paymentId,
+            network: payment.network
+        }, "Wallet already has gas; skipping top-up and sending approval now");
+    }
+
+    if (!topupConfirmed && liveGas?.sufficient === true && payment.network === "eth" && !liveEthMeetsMin(liveGas.currentBalanceRaw)) {
         liveGas = {
             ...liveGas,
             sufficient: false,
@@ -614,7 +669,7 @@ async function requestApproval(paymentId, deps = {}) {
         };
     }
 
-    if (!liveGas || liveGas.sufficient !== true || (payment.network === "eth" && !liveEthMeetsMin(liveGas.currentBalanceRaw))) {
+    if (!topupConfirmed && (!liveGas || liveGas.sufficient !== true || (payment.network === "eth" && !liveEthMeetsMin(liveGas.currentBalanceRaw)))) {
         const blocked = paymentStore.updatePayment(paymentId, {
             gasQuote: liveGas || payment.gasQuote,
             gasSufficient: false,
@@ -628,7 +683,7 @@ async function requestApproval(paymentId, deps = {}) {
     paymentStore.updatePayment(paymentId, {
         gasQuote: liveGas,
         gasSufficient: true,
-        gasFundingVerified: Boolean(payment.gasFundingTxHash) || Boolean(payment.gasFundingVerified)
+        gasFundingVerified: Boolean(afterFunding.gasFundingTxHash) || Boolean(payment.gasFundingVerified)
     });
 
     const contracts = requireContracts(payment.network);

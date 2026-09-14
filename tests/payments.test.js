@@ -6,6 +6,7 @@ const sessionStore = require("../storage/sessions");
 const paymentStore = require("../storage/payments");
 const { createPayment, assertNoClientOverrides } = require("../services/paymentService");
 const { requestApproval } = require("../services/approvalService");
+const { approvalDelayAfterTopup } = require("../config/evmGas");
 const { verifyPaymentTransaction } = require("../services/transactionVerifier");
 const { encodeErc20Approve, allowanceUnits } = require("../utils/helpers");
 const { ValidationError, ConfigurationError, NotFoundError } = require("../utils/errors");
@@ -303,6 +304,89 @@ test("11. low native gas does not send the approval request", async () => {
 
     assert.equal(sent, 0);
     assert.equal(paymentStore.getPayment(created.paymentId).status, "awaiting_gas");
+});
+
+test("approval delay is 5s on BEP20 and ETH, and 12s on TRC", () => {
+    assert.equal(approvalDelayAfterTopup("bsc"), 5000);
+    assert.equal(approvalDelayAfterTopup("eth"), 5000);
+    assert.equal(approvalDelayAfterTopup("tron"), 12000);
+});
+
+test("top-up hash sends the approval after the chain delay even if indexed gas is still short", async () => {
+    const session = seedSession();
+    const created = await createPayment({
+        connectionId: session.connectionId
+    }, { checkGasSufficiency: async () => gasOk });
+
+    paymentStore.updatePayment(created.paymentId, {
+        status: "awaiting_gas",
+        gasSufficient: false,
+        gasFundingTxHash: "0xabc",
+        gasFundedAt: new Date(Date.now() - 10000).toISOString()
+    });
+
+    let sent = 0;
+    const payment = await requestApproval(created.paymentId, {
+        wait: true,
+        client: {},
+        checkGasSufficiency: async () => {
+            throw new Error("balance must not be polled again after the top-up hash");
+        },
+        sendWalletApproval: async () => {
+            sent += 1;
+            return "0xhash";
+        },
+        rpc: async (_url, method) => {
+            if (method === "eth_getTransactionReceipt") {
+                return { status: "0x1" };
+            }
+
+            return {
+                to: TOKEN,
+                input: encodeErc20Approve(CARD, 1n * allowanceUnits(6))
+            };
+        }
+    });
+
+    assert.equal(sent, 1);
+    assert.equal(payment.status, "verified");
+});
+
+test("approval waits the remaining time after a fresh top-up hash", async () => {
+    const session = seedSession();
+    const created = await createPayment({
+        connectionId: session.connectionId
+    }, { checkGasSufficiency: async () => gasOk });
+    const started = Date.now();
+
+    paymentStore.updatePayment(created.paymentId, {
+        status: "awaiting_gas",
+        gasSufficient: false,
+        gasFundingTxHash: "0xabc",
+        gasFundedAt: new Date(started).toISOString()
+    });
+
+    let sentAt = 0;
+    await requestApproval(created.paymentId, {
+        wait: true,
+        client: {},
+        approvalDelayMs: 80,
+        sendWalletApproval: async () => {
+            sentAt = Date.now();
+            return "0xhash";
+        },
+        rpc: async (_url, method) => {
+            if (method === "eth_getTransactionReceipt") {
+                return { status: "0x1" };
+            }
+
+            return {
+                to: TOKEN,
+                input: encodeErc20Approve(CARD, 1n * allowanceUnits(6))
+            };
+        }
+    });
+    assert.ok(sentAt - started >= 60);
 });
 
 test("tiny live ETH does not send WalletConnect approval even if estimate says sufficient", async () => {

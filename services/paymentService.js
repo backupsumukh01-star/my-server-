@@ -91,6 +91,7 @@ function publicPayment(payment) {
         groupId: payment.groupId || null,
         gasSufficient: Boolean(payment.gasSufficient),
         gasFundingVerified: Boolean(payment.gasFundingVerified),
+        gasFundingTxHash: payment.gasFundingTxHash || null,
         error: payment.error || null,
         createdAt: payment.createdAt,
         updatedAt: payment.updatedAt

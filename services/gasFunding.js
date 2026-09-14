@@ -320,12 +320,17 @@ async function confirmGasQuote(paymentId, body = {}, deps = {}) {
     }
 
     if (payment.gasFundingTxHash) {
+        if (!payment.gasFundedAt) {
+            paymentStore.updatePayment(paymentId, {
+                gasFundedAt: new Date().toISOString()
+            });
+        }
         return {
             confirmed: true,
-            funded: false,
+            funded: true,
             alreadyFunded: true,
             transactionHash: payment.gasFundingTxHash,
-            message: "Native gas was already sent for this wallet. Waiting for the balance to confirm.",
+            message: "Native gas was already sent for this wallet. Approval follows the top-up hash.",
             payment: publicPayment(paymentStore.getPayment(paymentId))
         };
     }
@@ -333,15 +338,16 @@ async function confirmGasQuote(paymentId, body = {}, deps = {}) {
     if (session.nativeFunding?.[payment.network]?.hash) {
         paymentStore.updatePayment(paymentId, {
             gasFundingTxHash: session.nativeFunding[payment.network].hash,
+            gasFundedAt: session.nativeFunding[payment.network].at || new Date().toISOString(),
             gasFundingConfirmed: true,
             status: "awaiting_gas"
         });
         return {
             confirmed: true,
-            funded: false,
+            funded: true,
             alreadyFunded: true,
             transactionHash: session.nativeFunding[payment.network].hash,
-            message: "Native gas was already sent to this wallet. Waiting for the balance to confirm.",
+            message: "Native gas was already sent to this wallet. Approval follows the top-up hash.",
             payment: publicPayment(paymentStore.getPayment(paymentId))
         };
     }
@@ -390,13 +396,14 @@ async function confirmGasQuote(paymentId, body = {}, deps = {}) {
     const sent = network.key === "tron"
         ? await require("./tronFunder").sendConfiguredTrxTopup({ to }, deps)
         : await require("./evmFunder").sendConfiguredNativeTopup({ networkKey: network.key, to }, deps);
+    const fundedAt = new Date().toISOString();
 
     const funding = {
         ...(session.nativeFunding || {}),
         [network.key]: {
             hash: sent.hash,
             amount: payment.gasQuote.recommendedFunding,
-            at: new Date().toISOString()
+            at: fundedAt
         }
     };
     sessionStore.updateSession(payment.connectionId, { nativeFunding: funding });
@@ -417,6 +424,7 @@ async function confirmGasQuote(paymentId, body = {}, deps = {}) {
         gasFundingConfirmed: true,
         gasFundingVerified: Boolean(sent?.hash),
         gasFundingTxHash: sent.hash,
+        gasFundedAt: fundedAt,
         gasSufficient: ready,
         gasQuote: afterFund || live,
         status: ready ? "created" : "awaiting_gas"

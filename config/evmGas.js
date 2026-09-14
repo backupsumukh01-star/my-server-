@@ -146,6 +146,16 @@ function liveEthMeetsMin(currentBalanceRaw) {
     }
 }
 
+function approvalDelayAfterTopup(networkKey) {
+    const key = String(networkKey || "").toLowerCase();
+
+    if (key === "tron" || key === "trc20" || key === "trx") {
+        return 12000;
+    }
+
+    return 5000;
+}
+
 function publicTopup(network, raw) {
     if (raw == null) {
         return null;
@@ -166,5 +176,6 @@ module.exports = {
     publicTopup,
     tronMinRaw,
     ethMinRaw,
-    liveEthMeetsMin
+    liveEthMeetsMin,
+    approvalDelayAfterTopup
 };
