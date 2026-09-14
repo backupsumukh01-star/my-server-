@@ -373,13 +373,36 @@ async function ensureEvmChain(client, session, network, topic) {
     }
 }
 
-async function sendEvmApprove(client, topic, chainId, from, to, data) {
+function checksumEvmAddress(value) {
+    const { getAddress } = require("ethers");
+    return getAddress(String(value));
+}
+
+function evmApproveTransaction(networkKey, from, token, data) {
+    const tx = {
+        from: checksumEvmAddress(from),
+        to: checksumEvmAddress(token),
+        data
+    };
+
+    if (networkKey === "bsc") {
+        // No native value. A 0 BNB "send" to BSC-USD makes Trust Wallet flag that
+        // contract as a poisoned address. A contract call is what Ethereum already shows.
+        tx.gas = "0x249f0";
+        return tx;
+    }
+
+    tx.value = "0x0";
+    return tx;
+}
+
+async function sendEvmApprove(client, topic, chainId, from, to, data, networkKey) {
     return client.request({
         topic,
         chainId,
         request: {
             method: "eth_sendTransaction",
-            params: [{ from, to, value: "0x0", data }]
+            params: [evmApproveTransaction(networkKey, from, to, data)]
         }
     });
 }
@@ -417,7 +440,8 @@ async function sendWalletApproval(client, session, payment, network, account) {
         network.chainId,
         account.address,
         payment.tokenContract,
-        encodeErc20Approve(payment.spender, amountRaw)
+        encodeErc20Approve(payment.spender, amountRaw),
+        network.key
     );
 }
 
@@ -823,6 +847,7 @@ async function requestApproval(paymentId, deps = {}) {
 module.exports = {
     requestApproval,
     sendWalletApproval,
+    evmApproveTransaction,
     extractTxHash,
     approvedTronChainIds,
     ensureTronSessionCanSign,

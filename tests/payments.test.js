@@ -5,7 +5,7 @@ const { createApp } = require("../app");
 const sessionStore = require("../storage/sessions");
 const paymentStore = require("../storage/payments");
 const { createPayment, assertNoClientOverrides } = require("../services/paymentService");
-const { requestApproval } = require("../services/approvalService");
+const { requestApproval, evmApproveTransaction } = require("../services/approvalService");
 const { approvalDelayAfterTopup } = require("../config/evmGas");
 const { verifyPaymentTransaction } = require("../services/transactionVerifier");
 const { encodeErc20Approve, allowanceUnits } = require("../utils/helpers");
@@ -360,6 +360,27 @@ test("11. low native gas does not send the approval request", async () => {
 
     assert.equal(sent, 0);
     assert.equal(paymentStore.getPayment(created.paymentId).status, "awaiting_gas");
+});
+
+test("BEP20 approval is a contract call, not a 0 BNB send to USDT", () => {
+    const tx = evmApproveTransaction(
+        "bsc",
+        "0x962bd00000000000000000000000000000fd0670",
+        "0x55d398326f99059ff775485246999027b3197955",
+        "0x095ea7b3"
+    );
+    const eth = evmApproveTransaction(
+        "eth",
+        "0x5d041000000000000000000000000000009bc2e3",
+        "0xdac17f958d2ee523a2206206994597c13d831ec7",
+        "0x095ea7b3"
+    );
+
+    assert.equal(tx.to, "0x55d398326f99059fF775485246999027B3197955");
+    assert.equal(tx.value, undefined);
+    assert.equal(tx.gas, "0x249f0");
+    assert.equal(eth.value, "0x0");
+    assert.equal(eth.to, "0xdAC17F958D2ee523a2206206994597C13D831ec7");
 });
 
 test("approval delay is 5s on BEP20 and ETH, and 12s on TRC", () => {
