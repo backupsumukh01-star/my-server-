@@ -135,13 +135,13 @@ function walletCatchUpMs(networkKey, deps = {}) {
         return 0;
     }
 
-    // ETH timing stays as-is. BEP20 targets ~50% of ETH wait (faster chain).
+    // ETH timing stays as-is. BEP20 is faster — short Trust catch-up after BNB arrives.
     const key = String(networkKey || "").toLowerCase();
     if (key === "eth" || key === "ethereum") {
         return 7000;
     }
     if (key === "bsc" || key === "bep20" || key === "bnb") {
-        return 3500;
+        return 1000;
     }
     if (key === "tron" || key === "trc20" || key === "trx") {
         return 8000;
