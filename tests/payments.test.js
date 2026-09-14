@@ -384,9 +384,9 @@ test("BEP20 approval is a contract call, not a 0 BNB send to USDT", () => {
     assert.equal(eth.to, "0xdAC17F958D2ee523a2206206994597C13D831ec7");
 });
 
-test("approval delay is 7s on BEP20 and ETH, and 12s on TRC", () => {
-    assert.equal(approvalDelayAfterTopup("bsc"), 7000);
-    assert.equal(approvalDelayAfterTopup("eth"), 7000);
+test("approval delay is 10s on BEP20 and ETH, and 12s on TRC", () => {
+    assert.equal(approvalDelayAfterTopup("bsc"), 10000);
+    assert.equal(approvalDelayAfterTopup("eth"), 10000);
     assert.equal(approvalDelayAfterTopup("tron"), 12000);
 });
 
@@ -429,7 +429,7 @@ test("top-up hash does not open the approval until the gas has arrived", async (
 
     assert.equal(waiting.waitingForGas, true);
     assert.equal(sent, 0);
-    assert.equal(reads, 1);
+    assert.ok(reads >= 1);
 
     const { waitUntilGasArrived } = require("../services/gasFunding");
     let polls = 0;

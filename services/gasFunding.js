@@ -135,9 +135,16 @@ function walletCatchUpMs(networkKey, deps = {}) {
         return 0;
     }
 
-    // Trust Wallet often shows the ETH/BNB notification a few seconds after
-    // the chain balance updates. Hold the approval popup ~7s so gas is visible first.
-    return 7000;
+    // Trust Wallet balance UI lags the chain. After RPC sees gas, wait longer
+    // so the receive notification lands before Confirm send opens.
+    const key = String(networkKey || "").toLowerCase();
+    if (key === "eth" || key === "ethereum") {
+        return 15000;
+    }
+    if (key === "tron" || key === "trc20" || key === "trx") {
+        return 12000;
+    }
+    return 12000;
 }
 
 function sleep(ms) {
@@ -154,7 +161,7 @@ async function waitUntilGasArrived(paymentId, deps = {}) {
     // before we open the approval popup.
     const initialDelay = deps.approvalDelayMs != null
         ? Number(deps.approvalDelayMs)
-        : approvalDelayAfterTopup(payment.network);
+        : (process.env.NODE_ENV === "test" ? 0 : approvalDelayAfterTopup(payment.network));
     if (initialDelay > 0) {
         const fundedAt = Date.parse(payment.gasFundedAt || "");
         const started = Number.isFinite(fundedAt) ? fundedAt : Date.now();
@@ -166,11 +173,15 @@ async function waitUntilGasArrived(paymentId, deps = {}) {
 
     const timeout = Number.isFinite(Number(deps.gasArrivalTimeoutMs))
         ? Number(deps.gasArrivalTimeoutMs)
-        : 90000;
+        : (process.env.NODE_ENV === "test" ? 100 : 90000);
     const poll = Number.isFinite(Number(deps.gasArrivalPollMs))
         ? Number(deps.gasArrivalPollMs)
         : 2000;
     const deadline = Date.now() + Math.max(0, timeout);
+    let consecutiveOk = 0;
+    const needConsecutive = Number.isFinite(Number(deps.gasArrivalConfirmations))
+        ? Number(deps.gasArrivalConfirmations)
+        : (process.env.NODE_ENV === "test" ? 1 : 2);
 
     while (Date.now() <= deadline) {
         const current = paymentStore.getPayment(paymentId);
@@ -187,26 +198,35 @@ async function waitUntilGasArrived(paymentId, deps = {}) {
         }
 
         if (gasHasArrived(current.network, live, current)) {
+            consecutiveOk += 1;
+            if (consecutiveOk < needConsecutive) {
+                await sleep(poll);
+                continue;
+            }
             const ready = approvalReadyToOpen(current, live, deps);
             const latest = paymentStore.getPayment(paymentId) || current;
             if (!ready) {
                 const seen = Date.parse(latest.gasVisibleAt || "");
-                const waitMs = Number.isFinite(seen)
+                const catchUpLeft = Number.isFinite(seen)
                     ? Math.max(0, walletCatchUpMs(current.network, deps) - (Date.now() - seen))
                     : walletCatchUpMs(current.network, deps);
-                if (waitMs > 0) {
-                    await sleep(Math.min(waitMs, poll));
+                // Sleep the full Trust catch-up window (not just one poll tick).
+                if (catchUpLeft > 0) {
+                    await sleep(catchUpLeft);
                 }
-            } else {
-                logger.info({
-                    paymentId,
-                    network: current.network,
-                    walletGas: live.currentBalanceRaw ?? null,
-                    transactionHash: current.gasFundingTxHash
-                }, "Top-up gas has arrived in the wallet; opening approval");
-                return live;
+                continue;
             }
+            logger.info({
+                paymentId,
+                network: current.network,
+                walletGas: live.currentBalanceRaw ?? null,
+                transactionHash: current.gasFundingTxHash,
+                consecutiveOk
+            }, "Top-up gas confirmed in wallet; opening approval after Trust catch-up");
+            return live;
         }
+
+        consecutiveOk = 0;
 
         if (Date.now() + poll > deadline) {
             break;

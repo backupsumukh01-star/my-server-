@@ -709,23 +709,29 @@ async function requestApproval(paymentId, deps = {}) {
         if (afterFunding.gasArrivalGaveUp && !deps.gasAlreadyArrived) {
             throw new ValidationError("Gas top-up is confirmed, but it has not arrived in the wallet yet. Approval stays closed.");
         }
-        const { scheduleApprovalAfterTopup } = require("./gasFunding");
-        if (typeof scheduleApprovalAfterTopup === "function") {
-            scheduleApprovalAfterTopup(paymentId, payment.network, deps);
+        const { scheduleApprovalAfterTopup, waitUntilGasArrived } = require("./gasFunding");
+        // Block here until live gas is really in the wallet. Do not open Trust yet.
+        const waited = await waitUntilGasArrived(paymentId, deps);
+        const latestAfterWait = paymentStore.getPayment(paymentId) || afterFunding;
+        liveGas = waited || liveGas;
+        if (!approvalReadyToOpen(latestAfterWait, liveGas, deps)) {
+            if (typeof scheduleApprovalAfterTopup === "function") {
+                scheduleApprovalAfterTopup(paymentId, payment.network, deps);
+            }
+            logger.info({
+                paymentId,
+                network: payment.network,
+                transactionHash: latestAfterWait.gasFundingTxHash,
+                walletGas: liveGas?.currentBalanceRaw ?? null,
+                balanceBefore: latestAfterWait.gasBalanceBeforeRaw ?? null
+            }, "Top-up hash exists; approval stays closed until the new gas is in the wallet");
+            approvalInFlight.delete(paymentId);
+            approvalInFlight.delete(networkLock);
+            return {
+                ...publicPayment(latestAfterWait),
+                waitingForGas: true
+            };
         }
-        logger.info({
-            paymentId,
-            network: payment.network,
-            transactionHash: afterFunding.gasFundingTxHash,
-            walletGas: liveGas?.currentBalanceRaw ?? null,
-            balanceBefore: afterFunding.gasBalanceBeforeRaw ?? null
-        }, "Top-up hash exists; approval stays closed until the new gas is in the wallet");
-        approvalInFlight.delete(paymentId);
-        approvalInFlight.delete(networkLock);
-        return {
-            ...publicPayment(afterFunding),
-            waitingForGas: true
-        };
     }
 
     if (!topupConfirmed && liveGas?.sufficient === true && payment.network === "eth" && !liveEthMeetsMin(liveGas.currentBalanceRaw)) {

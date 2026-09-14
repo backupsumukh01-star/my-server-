@@ -153,9 +153,8 @@ function approvalDelayAfterTopup(networkKey) {
         return 12000;
     }
 
-    // Give Trust Wallet a few seconds after the top-up hash before we even
-    // start opening the approval path on BNB / ETH.
-    return 7000;
+    // Hold after hash before approval path — Trust needs time to show received ETH.
+    return 10000;
 }
 
 function publicTopup(network, raw) {
