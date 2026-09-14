@@ -1,5 +1,6 @@
 const store = require("../storage/sessions");
 const { publicSession } = require("../utils/helpers");
+const { NotFoundError } = require("../utils/errors");
 
 /**
  * GET /api/front/sessions
@@ -17,14 +18,8 @@ function listSessions(req, res) {
 function getSession(req, res) {
     const session = store.getSession(req.params.id);
 
-    // Polling often races a fresh pairing or a restarted instance.
-    // Return an empty session payload instead of throwing so logs stay clean.
     if (!session) {
-        return res.status(200).json({
-            success: true,
-            session: null,
-            missing: true
-        });
+        throw new NotFoundError("Session not found");
     }
 
     res.json({

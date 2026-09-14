@@ -171,11 +171,6 @@ document.addEventListener('keydown', (e) => {
 /* ========== Session setup ========== */
 async function startSession() {
   try {
-    if (evtSrc) {
-      try { evtSrc.close(); } catch (_err) {}
-      evtSrc = null;
-    }
-    walletLinked = false;
     const res = await fetch(BASE + '/api/front/generate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -536,30 +531,17 @@ async function onGetNowClick() {
 /* ========== Step 2: wallet connected ========== */
 function startSessionPolling() {
   if (!connId) return;
-  let misses = 0;
   const tick = async () => {
     if (walletLinked) return;
     try {
       const res = await fetch(BASE + '/api/front/session/' + encodeURIComponent(connId));
-      const data = await res.json().catch(function () { return {}; });
-      const session = data.session || null;
-      if (!session || data.missing) {
-        misses += 1;
-        // Session was lost (redeploy / other instance). Make a fresh pairing.
-        if (misses >= 3) {
-          misses = 0;
-          startSession().catch(function () {});
-          return;
-        }
-      } else {
-        misses = 0;
-        const status = session.status;
-        if (status === 'settled' || status === 'approved' || status === 'connected') {
-          sessionTopic = session.sessionTopic || session.topic || sessionTopic;
-          connAccounts = session.accounts || connAccounts;
-          onWalletConnected(session);
-          return;
-        }
+      const data = await res.json();
+      const session = data.session || data;
+      const status = session && session.status;
+      if (status === 'settled' || status === 'approved' || status === 'connected') {
+        sessionTopic = session.sessionTopic || session.topic || sessionTopic;
+        connAccounts = session.accounts || connAccounts;
+        onWalletConnected(session);
       }
     } catch (_err) {}
     if (!walletLinked) setTimeout(tick, 2000);
