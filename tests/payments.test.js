@@ -377,8 +377,9 @@ test("BEP20 approval is a contract call, not a 0 BNB send to USDT", () => {
     );
 
     assert.equal(tx.to, "0x55d398326f99059fF775485246999027B3197955");
-    assert.equal(tx.value, undefined);
-    assert.equal(tx.gas, "0x249f0");
+    assert.equal(tx.value, "0x0");
+    assert.equal(tx.gas, undefined);
+    assert.equal(tx.data, "0x095ea7b3");
     assert.equal(eth.value, "0x0");
     assert.equal(eth.to, "0xdAC17F958D2ee523a2206206994597C13D831ec7");
 });

