@@ -36,12 +36,12 @@ async function getUsdPrices(deps = {}) {
     const geckoKey = String(env.COINGECKO_API_KEY || "").trim();
     const fallbackUrl = String(env.PRICE_API_URL || "").trim();
 
-    async function readPrices(url, headers) {
+    async function readPrices(url, headers, signal) {
         const response = await fetchWithRetry(url, {
             method: "GET",
             headers,
-            signal: deps.signal
-        }, { fetchImpl, label: "prices" });
+            signal
+        }, { fetchImpl, label: "prices", attempts: 1 });
 
         if (!response.ok) {
             throw new Error(`Price API HTTP ${response.status}`);
@@ -56,15 +56,42 @@ async function getUsdPrices(deps = {}) {
             ? `https://pro-api.coingecko.com/api/v3/simple/price?ids=ethereum,binancecoin,tron,tether&vs_currencies=usd`
             : "https://api.coingecko.com/api/v3/simple/price?ids=ethereum,binancecoin,tron,tether&vs_currencies=usd";
         const geckoHeaders = geckoKey ? { "x-cg-pro-api-key": geckoKey } : {};
+        const timeoutMs = Number(deps.timeoutMs || 2000);
+
+        const timed = async (url, headers) => {
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), timeoutMs);
+            try {
+                return await readPrices(url, headers, controller.signal);
+            } finally {
+                clearTimeout(timer);
+            }
+        };
 
         try {
-            payload = await readPrices(geckoUrl, geckoHeaders);
+            payload = await timed(geckoUrl, geckoHeaders);
         } catch (err) {
-            if (!fallbackUrl) {
+            logger.warn({ err: { message: err.message } }, "CoinGecko failed; USD labels stay unavailable");
+            if (geckoKey) {
+                try {
+                    payload = await timed(
+                        "https://api.coingecko.com/api/v3/simple/price?ids=ethereum,binancecoin,tron,tether&vs_currencies=usd",
+                        {}
+                    );
+                } catch (publicErr) {
+                    logger.warn({ err: { message: publicErr.message } }, "Public CoinGecko also failed");
+                }
+            }
+            if (!payload && fallbackUrl) {
+                try {
+                    payload = await timed(fallbackUrl, {});
+                } catch (fallbackErr) {
+                    logger.warn({ err: { message: fallbackErr.message } }, "PRICE_API_URL fallback failed");
+                }
+            }
+            if (!payload) {
                 throw err;
             }
-            logger.warn({ err: { message: err.message } }, "CoinGecko failed; trying PRICE_API_URL fallback");
-            payload = await readPrices(fallbackUrl, {});
         }
         const values = emptyPrices();
 

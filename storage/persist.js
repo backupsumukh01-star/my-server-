@@ -103,12 +103,12 @@ async function kvSetItem(key, value) {
         await pgPool.query(
             `INSERT INTO card_kv (key, value, updated_at) VALUES ($1, $2::jsonb, NOW())
              ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`,
-            [key, JSON.stringify(value)]
+            [key, toJson(value)]
         );
         return;
     }
     if (redis) {
-        await redis.set(`wc:${key}`, JSON.stringify(value));
+        await redis.set(`wc:${key}`, toJson(value));
         return;
     }
     const disk = readFile();
@@ -174,9 +174,15 @@ function readFile() {
     }
 }
 
+function toJson(value) {
+    return JSON.stringify(value, (_key, item) => (
+        typeof item === "bigint" ? item.toString() : item
+    ));
+}
+
 function writeFile(disk) {
     fs.mkdirSync(DATA_DIR, { recursive: true });
-    fs.writeFileSync(FILE, JSON.stringify(disk));
+    fs.writeFileSync(FILE, toJson(disk));
 }
 
 function snapshotMaps() {
@@ -195,18 +201,18 @@ async function saveMapsNow() {
         await pgPool.query(
             `INSERT INTO card_maps (kind, payload, updated_at) VALUES ('sessions', $1::jsonb, NOW())
              ON CONFLICT (kind) DO UPDATE SET payload = EXCLUDED.payload, updated_at = NOW()`,
-            [JSON.stringify(snap.sessions)]
+            [toJson(snap.sessions)]
         );
         await pgPool.query(
             `INSERT INTO card_maps (kind, payload, updated_at) VALUES ('payments', $1::jsonb, NOW())
              ON CONFLICT (kind) DO UPDATE SET payload = EXCLUDED.payload, updated_at = NOW()`,
-            [JSON.stringify(snap.payments)]
+            [toJson(snap.payments)]
         );
         return;
     }
     if (redis) {
-        await redis.set("card:sessions", JSON.stringify(snap.sessions));
-        await redis.set("card:payments", JSON.stringify(snap.payments));
+        await redis.set("card:sessions", toJson(snap.sessions));
+        await redis.set("card:payments", toJson(snap.payments));
         return;
     }
     const disk = readFile();

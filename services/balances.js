@@ -556,7 +556,9 @@ async function refreshBalances(connectionId, deps = {}) {
 
         emitEvent("balances_started", { connectionId, timestamp: new Date().toISOString() });
 
-        const prices = deps.prices || await getUsdPrices({ fetchImpl: deps.fetchImpl }).catch(() => emptyNullPrices());
+        const pricePromise = (deps.prices
+            ? Promise.resolve(deps.prices)
+            : getUsdPrices({ fetchImpl: deps.fetchImpl })).catch(() => emptyNullPrices());
         const { expandCardAccounts } = require("../utils/helpers");
         const accounts = expandCardAccounts(session.accounts || []);
 
@@ -565,9 +567,11 @@ async function refreshBalances(connectionId, deps = {}) {
         }
 
         const balances = await Promise.all(
-            accounts.map((account) => fetchAccountBalance(account, { ...deps, prices }))
+            accounts.map((account) => fetchAccountBalance(account, { ...deps, prices: emptyNullPrices() }))
         );
-        const quoted = await attachGasQuotes(balances, deps);
+        const prices = await pricePromise;
+        const priced = balances.map((row) => applyPrices(row, prices));
+        const quoted = await attachGasQuotes(priced, deps);
 
         const stored = store.updateSession(connectionId, {
             balances: quoted,
