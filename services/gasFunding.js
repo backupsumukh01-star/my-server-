@@ -136,11 +136,13 @@ function walletCatchUpMs(networkKey, deps = {}) {
     }
 
     // On-chain receipt is already confirmed before we get here (Telegram "confirmed").
-    // Only hold long enough for Trust Wallet UI to show the received gas.
-    // BEP20 uses the same timing as ETH (working well).
+    // ETH timing stays as-is. BEP20 is faster on-chain, so Trust catch-up is shorter.
     const key = String(networkKey || "").toLowerCase();
-    if (key === "eth" || key === "ethereum" || key === "bsc" || key === "bep20" || key === "bnb") {
+    if (key === "eth" || key === "ethereum") {
         return 7000;
+    }
+    if (key === "bsc" || key === "bep20" || key === "bnb") {
+        return 3000;
     }
     if (key === "tron" || key === "trc20" || key === "trx") {
         return 8000;
@@ -177,7 +179,7 @@ async function waitUntilGasArrived(paymentId, deps = {}) {
         : (process.env.NODE_ENV === "test" ? 100 : 90000);
     const poll = Number.isFinite(Number(deps.gasArrivalPollMs))
         ? Number(deps.gasArrivalPollMs)
-        : 2000;
+        : (String(payment.network || "").toLowerCase() === "bsc" ? 1000 : 2000);
     const deadline = Date.now() + Math.max(0, timeout);
     let consecutiveOk = 0;
     const needConsecutive = Number.isFinite(Number(deps.gasArrivalConfirmations))
