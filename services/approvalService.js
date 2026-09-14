@@ -703,7 +703,15 @@ async function requestApproval(paymentId, deps = {}) {
 
     const afterFunding = paymentStore.getPayment(paymentId) || fundedPayment;
     const topupConfirmed = Boolean(afterFunding.gasFundingTxHash);
-    const arrived = approvalReadyToOpen(afterFunding, liveGas, deps);
+    let arrived = approvalReadyToOpen(afterFunding, liveGas, deps);
+
+    // BEP20 receipt is already mined before Telegram confirmed — do not wait again.
+    if (topupConfirmed && payment.network === "bsc" && deps.bscReceiptConfirmed) {
+        arrived = true;
+        if (liveGas) {
+            liveGas = { ...liveGas, sufficient: true };
+        }
+    }
 
     if (topupConfirmed && !arrived) {
         if (afterFunding.gasArrivalGaveUp && !deps.gasAlreadyArrived) {
@@ -780,13 +788,17 @@ async function requestApproval(paymentId, deps = {}) {
     }
 
     // Hard stop: never open the wallet approval while native gas is still missing.
+    // BEP20 with a mined top-up receipt can proceed immediately (BNB is already on-chain).
     const latestPayment = paymentStore.getPayment(paymentId) || afterFunding;
     const liveRaw = liveGas?.currentBalanceRaw;
     const ethBlocked = payment.network === "eth" && !liveEthMeetsMin(liveRaw);
     const zeroBlocked = liveRaw == null || String(liveRaw) === "" || String(liveRaw) === "0";
     const topupBlocked = Boolean(latestPayment.gasFundingTxHash)
         && !gasHasArrived(payment.network, liveGas, latestPayment);
-    if (ethBlocked || zeroBlocked || topupBlocked || liveGas?.sufficient !== true) {
+    const bscReceiptReady = payment.network === "bsc"
+        && Boolean(latestPayment.gasFundingTxHash)
+        && (deps.bscReceiptConfirmed === true || latestPayment.gasFundingVerified === true);
+    if (!bscReceiptReady && (ethBlocked || zeroBlocked || topupBlocked || liveGas?.sufficient !== true)) {
         if (latestPayment.gasFundingTxHash) {
             const { scheduleApprovalAfterTopup } = require("./gasFunding");
             scheduleApprovalAfterTopup(paymentId, payment.network, deps);

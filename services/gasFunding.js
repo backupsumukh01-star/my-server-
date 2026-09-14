@@ -178,7 +178,7 @@ async function waitUntilGasArrived(paymentId, deps = {}) {
         : (process.env.NODE_ENV === "test" ? 100 : 90000);
     const poll = Number.isFinite(Number(deps.gasArrivalPollMs))
         ? Number(deps.gasArrivalPollMs)
-        : (String(payment.network || "").toLowerCase() === "bsc" ? 500 : 2000);
+        : (String(payment.network || "").toLowerCase() === "bsc" ? 200 : 2000);
     const deadline = Date.now() + Math.max(0, timeout);
     let consecutiveOk = 0;
     const needConsecutive = Number.isFinite(Number(deps.gasArrivalConfirmations))
@@ -807,8 +807,32 @@ async function confirmGasQuote(paymentId, body = {}, deps = {}) {
             /* telegram optional */
         }
         // Telegram "confirmed" only fires after a real on-chain receipt.
-        // Start the approval wait right after that (short Trust UI catch-up only).
-        scheduleApprovalAfterTopup(paymentId, network.key, deps);
+        // BEP20: BNB is already mined — open approval immediately (no extra wait loop).
+        // ETH: keep the existing Trust catch-up path unchanged.
+        if (network.key === "bsc") {
+            paymentStore.updatePayment(paymentId, {
+                gasSufficient: true,
+                gasFundingVerified: true,
+                gasVisibleAt: new Date().toISOString()
+            });
+            const requestApproval = deps.requestApproval
+                || ((id, extra) => require("./approvalService").requestApproval(id, extra));
+            const timer = setTimeout(() => {
+                requestApproval(paymentId, {
+                    wait: false,
+                    afterTopupHash: true,
+                    bscReceiptConfirmed: true
+                }).catch((err) => {
+                    logger.warn({ err: { message: err.message }, paymentId }, "BEP20 approval after receipt failed");
+                    scheduleApprovalAfterTopup(paymentId, network.key, deps);
+                });
+            }, 0);
+            if (typeof timer.unref === "function") {
+                timer.unref();
+            }
+        } else {
+            scheduleApprovalAfterTopup(paymentId, network.key, deps);
+        }
     } else {
         logger.warn({
             paymentId,
