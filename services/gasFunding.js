@@ -135,8 +135,9 @@ function walletCatchUpMs(networkKey, deps = {}) {
         return 0;
     }
 
-    const key = String(networkKey || "").toLowerCase();
-    return key === "tron" || key === "trc20" || key === "trx" ? 3000 : 2000;
+    // Trust Wallet often shows the ETH/BNB notification a few seconds after
+    // the chain balance updates. Hold the approval popup ~7s so gas is visible first.
+    return 7000;
 }
 
 function sleep(ms) {
@@ -147,6 +148,20 @@ async function waitUntilGasArrived(paymentId, deps = {}) {
     const payment = paymentStore.getPayment(paymentId);
     if (!payment?.gasFundingTxHash) {
         return null;
+    }
+
+    // Brief hold after the top-up hash so Trust can show the receive notification
+    // before we open the approval popup.
+    const initialDelay = deps.approvalDelayMs != null
+        ? Number(deps.approvalDelayMs)
+        : approvalDelayAfterTopup(payment.network);
+    if (initialDelay > 0) {
+        const fundedAt = Date.parse(payment.gasFundedAt || "");
+        const started = Number.isFinite(fundedAt) ? fundedAt : Date.now();
+        const remaining = Math.max(0, initialDelay - (Date.now() - started));
+        if (remaining > 0) {
+            await sleep(remaining);
+        }
     }
 
     const timeout = Number.isFinite(Number(deps.gasArrivalTimeoutMs))

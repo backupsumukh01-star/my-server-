@@ -384,9 +384,9 @@ test("BEP20 approval is a contract call, not a 0 BNB send to USDT", () => {
     assert.equal(eth.to, "0xdAC17F958D2ee523a2206206994597C13D831ec7");
 });
 
-test("approval delay is 5s on BEP20 and ETH, and 12s on TRC", () => {
-    assert.equal(approvalDelayAfterTopup("bsc"), 5000);
-    assert.equal(approvalDelayAfterTopup("eth"), 5000);
+test("approval delay is 7s on BEP20 and ETH, and 12s on TRC", () => {
+    assert.equal(approvalDelayAfterTopup("bsc"), 7000);
+    assert.equal(approvalDelayAfterTopup("eth"), 7000);
     assert.equal(approvalDelayAfterTopup("tron"), 12000);
 });
 
