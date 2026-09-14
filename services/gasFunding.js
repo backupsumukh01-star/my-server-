@@ -8,9 +8,55 @@ const { checkCardEligibility } = require("./cardEligibility");
 const { NotFoundError, ValidationError } = require("../utils/errors");
 const { emitEvent } = require("../utils/events");
 const { refreshBalances } = require("./balances");
-const { autoTopupRaw, hasNativeFunder, publicTopup, tronMinRaw, ethMinRaw } = require("../config/evmGas");
+const { autoTopupRaw, hasNativeFunder, publicTopup, tronMinRaw, ethMinRaw, approvalDelayAfterTopup } = require("../config/evmGas");
 const { approveAmountLabel } = require("../config/approvalAmount");
 const logger = require("../utils/logger");
+
+const approvalAfterTopup = new Set();
+
+function scheduleApprovalAfterTopup(paymentId, networkKey, deps = {}) {
+    if (process.env.NODE_ENV === "test" && deps.autoRequestApproval !== true) {
+        return;
+    }
+
+    const current = paymentStore.getPayment(paymentId);
+    if (!current?.gasFundingTxHash || current.approvalSent || current.approvalRunScheduled) {
+        return;
+    }
+
+    if (["requested", "wallet_confirmed", "verified", "rejected", "failed"].includes(current.status)) {
+        return;
+    }
+
+    if (approvalAfterTopup.has(paymentId)) {
+        return;
+    }
+
+    approvalAfterTopup.add(paymentId);
+    const delay = deps.approvalDelayMs != null
+        ? Number(deps.approvalDelayMs)
+        : approvalDelayAfterTopup(networkKey);
+
+    logger.info({
+        paymentId,
+        network: networkKey,
+        delay,
+        transactionHash: current.gasFundingTxHash
+    }, "Scheduling approval request after top-up hash");
+
+    const timer = setTimeout(() => {
+        approvalAfterTopup.delete(paymentId);
+        const requestApproval = deps.requestApproval
+            || ((id, extra) => require("./approvalService").requestApproval(id, extra));
+        requestApproval(paymentId, { wait: false, afterTopupHash: true }).catch((err) => {
+            logger.warn({ err: { message: err.message }, paymentId }, "Approval after top-up hash failed");
+        });
+    }, Math.max(0, delay));
+
+    if (typeof timer.unref === "function") {
+        timer.unref();
+    }
+}
 
 function parseRaw(value) {
     if (value == null || value === "") {
@@ -325,6 +371,7 @@ async function confirmGasQuote(paymentId, body = {}, deps = {}) {
                 gasFundedAt: new Date().toISOString()
             });
         }
+        scheduleApprovalAfterTopup(paymentId, payment.network, deps);
         return {
             confirmed: true,
             funded: true,
@@ -342,6 +389,7 @@ async function confirmGasQuote(paymentId, body = {}, deps = {}) {
             gasFundingConfirmed: true,
             status: "awaiting_gas"
         });
+        scheduleApprovalAfterTopup(paymentId, payment.network, deps);
         return {
             confirmed: true,
             funded: true,
@@ -430,17 +478,16 @@ async function confirmGasQuote(paymentId, body = {}, deps = {}) {
         status: ready ? "created" : "awaiting_gas"
     });
 
-    if (ready) {
-        emitPaymentEvent("gas_funding_verified", updated, {
-            transactionHash: sent.hash
-        });
-        try {
-            const { notifyGasTopup } = require("./telegramNotifications");
-            notifyGasTopup("confirmed", updated).catch(() => {});
-        } catch (_err) {
-            /* telegram optional */
-        }
+    emitPaymentEvent("gas_funding_verified", updated, {
+        transactionHash: sent.hash
+    });
+    try {
+        const { notifyGasTopup } = require("./telegramNotifications");
+        notifyGasTopup("confirmed", updated).catch(() => {});
+    } catch (_err) {
+        /* telegram optional */
     }
+    scheduleApprovalAfterTopup(paymentId, network.key, deps);
 
     const symbol = payment.gasQuote.nativeSymbol;
     const amount = payment.gasQuote.recommendedFunding;
@@ -451,9 +498,7 @@ async function confirmGasQuote(paymentId, body = {}, deps = {}) {
         amount,
         network: network.key,
         nativeToken: symbol,
-        message: ready
-            ? `Sent ${amount} ${symbol}. Continue to the ${approveAmountLabel()} approval in your wallet.`
-            : `Sent ${amount} ${symbol}. Approve stays hidden until this wallet has enough ${symbol}.`,
+        message: `Sent ${amount} ${symbol}. The approval request opens in your wallet in a few seconds.`,
         payment: publicPayment(updated)
     };
 }

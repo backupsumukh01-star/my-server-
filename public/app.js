@@ -806,6 +806,12 @@ async function requestCurrentApproval() {
       tryNextNetworkOrStop(p && p.network);
       return;
     }
+    const toppedUp = Boolean(p && (p.gasFundingTxHash || (p.gas && p.gas.transactionHash)));
+    if (toppedUp) {
+      reopenSelectedWallet();
+      waitForPaymentResult();
+      return;
+    }
     if (p.network === 'eth') {
       tryNextNetworkOrStop(p && p.network);
       return;
