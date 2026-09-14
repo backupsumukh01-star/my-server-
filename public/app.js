@@ -828,9 +828,7 @@ async function waitForApprovalOpened() {
       } catch (_err) {
         /* keep waiting; do not open the wallet yet */
       }
-      // BEP20 is fast — poll status quickly. ETH keeps the slower poll.
-      const net = paymentQueue[paymentIndex] && paymentQueue[paymentIndex].network;
-      await sleep(net === 'bsc' ? 400 : 2000);
+      await sleep(2000);
     }
   } finally {
     approvalWaitInFlight = false;
