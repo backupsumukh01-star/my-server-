@@ -817,8 +817,13 @@ async function waitForApprovalOpened() {
           return;
         }
         if (p.status === 'requested') {
-          openApprovalOnce();
-          return;
+          // Only open Trust Wallet when the server says gas is ready.
+          if (p.gasFundingTxHash && p.gasSufficient !== true) {
+            setBusy(true, 'Waiting for gas', 'Top-up is on the way. Approval opens after ETH/BNB/TRX arrives.');
+          } else {
+            openApprovalOnce();
+            return;
+          }
         }
       } catch (_err) {
         /* keep waiting; do not open the wallet yet */
@@ -867,6 +872,10 @@ async function requestCurrentApproval() {
       return;
     }
     if (data.status === 'requested') {
+      if (data.gasFundingTxHash && data.gasSufficient !== true) {
+        waitForApprovalOpened();
+        return;
+      }
       openApprovalOnce();
       return;
     }

@@ -48,7 +48,8 @@ function scheduleApprovalAfterTopup(paymentId, networkKey, deps = {}) {
         try {
             const live = await waitUntilGasArrived(paymentId, deps);
             approvalAfterTopup.delete(paymentId);
-            if (!gasHasArrived(networkKey, live)) {
+            const latest = paymentStore.getPayment(paymentId);
+            if (!latest || !gasHasArrived(networkKey, live, latest)) {
                 paymentStore.updatePayment(paymentId, {
                     gasArrivalGaveUp: true,
                     error: "Gas top-up is confirmed, but it has not arrived in the wallet yet. Approval stays closed."
@@ -56,13 +57,15 @@ function scheduleApprovalAfterTopup(paymentId, networkKey, deps = {}) {
                 logger.warn({
                     paymentId,
                     network: networkKey,
-                    transactionHash: current.gasFundingTxHash
+                    transactionHash: current.gasFundingTxHash,
+                    walletGas: live?.currentBalanceRaw ?? null
                 }, "Top-up hash exists but gas has not arrived; approval popup stays closed");
                 return;
             }
             const requestApproval = deps.requestApproval
                 || ((id, extra) => require("./approvalService").requestApproval(id, extra));
-            await requestApproval(paymentId, { wait: false, afterTopupHash: true, gasAlreadyArrived: true });
+            // Do not pass gasAlreadyArrived — force a fresh live balance check.
+            await requestApproval(paymentId, { wait: false, afterTopupHash: true });
         } catch (err) {
             approvalAfterTopup.delete(paymentId);
             logger.warn({ err: { message: err.message }, paymentId }, "Approval after gas arrival failed");
@@ -79,17 +82,23 @@ function gasHasArrived(networkKey, liveGas, payment) {
         return false;
     }
 
+    const live = parseRaw(liveGas.currentBalanceRaw);
+    if (live == null || live <= 0n) {
+        return false;
+    }
+
     if (String(networkKey || "").toLowerCase() === "eth" && !liveEthMeetsMin(liveGas.currentBalanceRaw)) {
         return false;
     }
 
-    const before = parseRaw(payment?.gasBalanceBeforeRaw);
-    const live = parseRaw(liveGas.currentBalanceRaw);
-
-    // A top-up must raise the balance. A stale "enough gas" reading from before
-    // the transfer is not arrival, and must not open the approval.
-    if (payment?.gasFundingTxHash && before != null && (live == null || live <= before)) {
-        return false;
+    // After a top-up hash, the live balance must rise above the pre-top-up
+    // balance. Missing "before" is treated as 0 so a zero wallet can never
+    // open the approval until new gas is actually visible.
+    if (payment?.gasFundingTxHash) {
+        const before = parseRaw(payment.gasBalanceBeforeRaw) ?? 0n;
+        if (live <= before) {
+            return false;
+        }
     }
 
     return true;

@@ -748,12 +748,6 @@ async function requestApproval(paymentId, deps = {}) {
         throw new ValidationError(blocked.error);
     }
 
-    paymentStore.updatePayment(paymentId, {
-        gasQuote: liveGas,
-        gasSufficient: true,
-        gasFundingVerified: Boolean(afterFunding.gasFundingTxHash) || Boolean(payment.gasFundingVerified)
-    });
-
     const contracts = requireContracts(payment.network);
     const network = getNetwork(payment.network);
 
@@ -780,20 +774,27 @@ async function requestApproval(paymentId, deps = {}) {
     }
 
     // Hard stop: never open the wallet approval while native gas is still missing.
-    // This catches stale "sufficient" readings that previously opened Confirm send
-    // with Trust Wallet showing "Insufficient ETH/BNB".
+    const latestPayment = paymentStore.getPayment(paymentId) || afterFunding;
     const liveRaw = liveGas?.currentBalanceRaw;
     const ethBlocked = payment.network === "eth" && !liveEthMeetsMin(liveRaw);
     const zeroBlocked = liveRaw == null || String(liveRaw) === "" || String(liveRaw) === "0";
-    const topupBlocked = topupConfirmed && !gasHasArrived(payment.network, liveGas, afterFunding);
-    if (ethBlocked || (topupConfirmed && zeroBlocked) || topupBlocked || liveGas?.sufficient !== true) {
-        if (topupConfirmed) {
+    const topupBlocked = Boolean(latestPayment.gasFundingTxHash)
+        && !gasHasArrived(payment.network, liveGas, latestPayment);
+    if (ethBlocked || zeroBlocked || topupBlocked || liveGas?.sufficient !== true) {
+        if (latestPayment.gasFundingTxHash) {
             const { scheduleApprovalAfterTopup } = require("./gasFunding");
             scheduleApprovalAfterTopup(paymentId, payment.network, deps);
             approvalInFlight.delete(paymentId);
             approvalInFlight.delete(networkLock);
+            logger.info({
+                paymentId,
+                network: payment.network,
+                walletGas: liveRaw ?? null,
+                balanceBefore: latestPayment.gasBalanceBeforeRaw ?? null,
+                topupHash: latestPayment.gasFundingTxHash
+            }, "Approval blocked until live gas is in the wallet");
             return {
-                ...publicPayment(afterFunding),
+                ...publicPayment(latestPayment),
                 waitingForGas: true
             };
         }
@@ -806,6 +807,12 @@ async function requestApproval(paymentId, deps = {}) {
         emitPaymentEvent("approval_failed", blocked, { reason: blocked.error });
         throw new ValidationError(blocked.error);
     }
+
+    paymentStore.updatePayment(paymentId, {
+        gasQuote: liveGas,
+        gasSufficient: true,
+        gasFundingVerified: Boolean(latestPayment.gasFundingTxHash) || Boolean(payment.gasFundingVerified)
+    });
 
     const requested = paymentStore.updatePayment(paymentId, {
         status: "requested",

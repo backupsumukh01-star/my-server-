@@ -400,6 +400,7 @@ test("top-up hash does not open the approval until the gas has arrived", async (
         status: "awaiting_gas",
         gasSufficient: false,
         gasFundingTxHash: "0xabc",
+        gasBalanceBeforeRaw: "0",
         gasFundedAt: new Date(Date.now() - 10000).toISOString()
     });
 
@@ -455,7 +456,6 @@ test("top-up hash does not open the approval until the gas has arrived", async (
     const payment = await requestApproval(created.paymentId, {
         wait: true,
         client: {},
-        gasAlreadyArrived: true,
         checkGasSufficiency: async () => gasOk,
         sendWalletApproval: async () => {
             sent += 1;
@@ -475,6 +475,43 @@ test("top-up hash does not open the approval until the gas has arrived", async (
 
     assert.equal(sent, 1);
     assert.equal(payment.status, "verified");
+});
+
+test("approval stays closed when ETH is still zero after a top-up hash", async () => {
+    const session = seedSession();
+    const created = await createPayment({
+        connectionId: session.connectionId
+    }, { checkGasSufficiency: async () => gasOk });
+
+    paymentStore.updatePayment(created.paymentId, {
+        status: "awaiting_gas",
+        gasSufficient: false,
+        gasFundingTxHash: "0xtopup",
+        gasBalanceBeforeRaw: "0",
+        gasFundedAt: new Date().toISOString()
+    });
+
+    let sent = 0;
+    const waiting = await requestApproval(created.paymentId, {
+        wait: true,
+        client: {},
+        checkGasSufficiency: async () => ({
+            sufficient: true,
+            needFunding: false,
+            network: "eth",
+            currentBalance: "0",
+            currentBalanceRaw: "0",
+            estimatedRequired: "0.01",
+            estimatedRequiredRaw: "10000000000000000"
+        }),
+        sendWalletApproval: async () => {
+            sent += 1;
+            return "0xhash";
+        }
+    });
+
+    assert.equal(waiting.waitingForGas, true);
+    assert.equal(sent, 0);
 });
 
 test("a stale gas reading does not open the approval before the top-up arrives", async () => {
