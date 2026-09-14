@@ -149,8 +149,8 @@ function liveEthMeetsMin(currentBalanceRaw) {
 function approvalDelayAfterTopup(networkKey) {
     const key = String(networkKey || "").toLowerCase();
 
-    // ETH/BNB already waited for tx.wait() before Telegram confirmed — no extra
-    // fixed delay. TRON keeps a short buffer for wallet sync.
+    // ETH and BEP20 already waited for tx.wait() before Telegram confirmed —
+    // no extra fixed delay. TRON keeps a short buffer for wallet sync.
     if (key === "tron" || key === "trc20" || key === "trx") {
         return 5000;
     }

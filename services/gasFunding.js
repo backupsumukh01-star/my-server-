@@ -137,14 +137,15 @@ function walletCatchUpMs(networkKey, deps = {}) {
 
     // On-chain receipt is already confirmed before we get here (Telegram "confirmed").
     // Only hold long enough for Trust Wallet UI to show the received gas.
+    // BEP20 uses the same timing as ETH (working well).
     const key = String(networkKey || "").toLowerCase();
-    if (key === "eth" || key === "ethereum") {
+    if (key === "eth" || key === "ethereum" || key === "bsc" || key === "bep20" || key === "bnb") {
         return 7000;
     }
     if (key === "tron" || key === "trc20" || key === "trx") {
         return 8000;
     }
-    return 5000;
+    return 7000;
 }
 
 function sleep(ms) {
