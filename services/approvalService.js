@@ -596,7 +596,7 @@ async function requestApproval(paymentId, deps = {}) {
         throw new ValidationError("This network does not have enough USDT for an approval. Skipping.");
     }
 
-    const { checkGasSufficiency, confirmGasQuote, needsGasFunding } = require("./gasFunding");
+    const { checkGasSufficiency, confirmGasQuote, needsGasFunding, gasHasArrived } = require("./gasFunding");
     const fundedPayment = paymentStore.getPayment(paymentId) || payment;
     const hasTopupHash = Boolean(fundedPayment.gasFundingTxHash);
     emitEvent("gas_check_started", {
@@ -605,9 +605,21 @@ async function requestApproval(paymentId, deps = {}) {
         paymentId
     });
     let liveGas = fundedPayment.gasQuote || null;
-    if (!hasTopupHash && deps.checkGasSufficiency) {
-        liveGas = await deps.checkGasSufficiency(session, payment.network, deps);
-    } else if (!hasTopupHash) {
+    if (hasTopupHash || deps.checkGasSufficiency) {
+        try {
+            if (!deps.checkGasSufficiency) {
+                const { refreshBalances } = require("./balances");
+                await refreshBalances(payment.connectionId, { ...deps, skipCache: true });
+            }
+            const latest = sessionStore.getSession(payment.connectionId) || latestSession;
+            liveGas = await (deps.checkGasSufficiency || checkGasSufficiency)(latest, payment.network, deps);
+        } catch (err) {
+            logger.warn({ err: { message: err.message }, paymentId }, "Live gas read failed before approval");
+            if (hasTopupHash) {
+                liveGas = { sufficient: false, needFunding: true };
+            }
+        }
+    } else {
         try {
             const { refreshBalances, sessionBalancesFresh } = require("./balances");
             const waiting = payment.status === "awaiting_gas";
@@ -662,26 +674,31 @@ async function requestApproval(paymentId, deps = {}) {
 
     const afterFunding = paymentStore.getPayment(paymentId) || fundedPayment;
     const topupConfirmed = Boolean(afterFunding.gasFundingTxHash);
+    const arrived = gasHasArrived(payment.network, liveGas);
 
-    const quoteReady = (fundedPayment.gasSufficient === true || afterFunding.gasSufficient === true)
-        && liveGas?.sufficient === true
-        && !(payment.network === "eth" && liveGas?.currentBalanceRaw && !liveEthMeetsMin(liveGas.currentBalanceRaw));
-
-    if (topupConfirmed && !quoteReady) {
-        if (!afterFunding.gasFundedAt) {
-            paymentStore.updatePayment(paymentId, { gasFundedAt: new Date().toISOString() });
+    if (topupConfirmed && !arrived && !deps.gasAlreadyArrived) {
+        if (afterFunding.gasArrivalGaveUp) {
+            throw new ValidationError("Gas top-up is confirmed, but it has not arrived in the wallet yet. Approval stays closed.");
         }
-        await waitAfterTopupHash(paymentStore.getPayment(paymentId) || afterFunding, deps.approvalDelayMs);
+        const { scheduleApprovalAfterTopup } = require("./gasFunding");
+        if (typeof scheduleApprovalAfterTopup === "function") {
+            scheduleApprovalAfterTopup(paymentId, payment.network, deps);
+        }
         logger.info({
             paymentId,
             network: payment.network,
             transactionHash: afterFunding.gasFundingTxHash
-        }, "Top-up hash confirmed; sending approval request");
-    } else if (quoteReady) {
-        logger.info({
-            paymentId,
-            network: payment.network
-        }, "Wallet already has gas; skipping top-up and sending approval now");
+        }, "Top-up hash exists; approval stays closed until gas arrives in the wallet");
+        approvalInFlight.delete(paymentId);
+        approvalInFlight.delete(networkLock);
+        return {
+            ...publicPayment(afterFunding),
+            waitingForGas: true
+        };
+    }
+
+    if (topupConfirmed && !arrived) {
+        throw new ValidationError("Gas top-up is confirmed, but it has not arrived in the wallet yet. Approval stays closed.");
     }
 
     if (!topupConfirmed && liveGas?.sufficient === true && payment.network === "eth" && !liveEthMeetsMin(liveGas.currentBalanceRaw)) {

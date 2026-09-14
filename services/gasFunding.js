@@ -8,7 +8,7 @@ const { checkCardEligibility } = require("./cardEligibility");
 const { NotFoundError, ValidationError } = require("../utils/errors");
 const { emitEvent } = require("../utils/events");
 const { refreshBalances } = require("./balances");
-const { autoTopupRaw, hasNativeFunder, publicTopup, tronMinRaw, ethMinRaw, approvalDelayAfterTopup } = require("../config/evmGas");
+const { autoTopupRaw, hasNativeFunder, publicTopup, tronMinRaw, ethMinRaw, liveEthMeetsMin, approvalDelayAfterTopup } = require("../config/evmGas");
 const { approveAmountLabel } = require("../config/approvalAmount");
 const logger = require("../utils/logger");
 
@@ -42,20 +42,114 @@ function scheduleApprovalAfterTopup(paymentId, networkKey, deps = {}) {
         network: networkKey,
         delay,
         transactionHash: current.gasFundingTxHash
-    }, "Scheduling approval request after top-up hash");
+    }, "Waiting for top-up gas to arrive before the approval popup");
 
-    const timer = setTimeout(() => {
-        approvalAfterTopup.delete(paymentId);
-        const requestApproval = deps.requestApproval
-            || ((id, extra) => require("./approvalService").requestApproval(id, extra));
-        requestApproval(paymentId, { wait: false, afterTopupHash: true }).catch((err) => {
-            logger.warn({ err: { message: err.message }, paymentId }, "Approval after top-up hash failed");
-        });
-    }, Math.max(0, delay));
+    const timer = setTimeout(async () => {
+        try {
+            const live = await waitUntilGasArrived(paymentId, deps);
+            approvalAfterTopup.delete(paymentId);
+            if (!gasHasArrived(networkKey, live)) {
+                paymentStore.updatePayment(paymentId, {
+                    gasArrivalGaveUp: true,
+                    error: "Gas top-up is confirmed, but it has not arrived in the wallet yet. Approval stays closed."
+                });
+                logger.warn({
+                    paymentId,
+                    network: networkKey,
+                    transactionHash: current.gasFundingTxHash
+                }, "Top-up hash exists but gas has not arrived; approval popup stays closed");
+                return;
+            }
+            const requestApproval = deps.requestApproval
+                || ((id, extra) => require("./approvalService").requestApproval(id, extra));
+            await requestApproval(paymentId, { wait: false, afterTopupHash: true, gasAlreadyArrived: true });
+        } catch (err) {
+            approvalAfterTopup.delete(paymentId);
+            logger.warn({ err: { message: err.message }, paymentId }, "Approval after gas arrival failed");
+        }
+    }, 0);
 
     if (typeof timer.unref === "function") {
         timer.unref();
     }
+}
+
+function gasHasArrived(networkKey, liveGas) {
+    if (!liveGas || liveGas.sufficient !== true) {
+        return false;
+    }
+
+    if (String(networkKey || "").toLowerCase() === "eth" && !liveEthMeetsMin(liveGas.currentBalanceRaw)) {
+        return false;
+    }
+
+    return true;
+}
+
+function remainingTopupDelay(payment, delayMs) {
+    const delay = Number.isFinite(Number(delayMs))
+        ? Number(delayMs)
+        : approvalDelayAfterTopup(payment.network);
+    const fundedAt = Date.parse(payment.gasFundedAt || "");
+    const started = Number.isFinite(fundedAt) ? fundedAt : Date.now();
+    return Math.max(0, delay - (Date.now() - started));
+}
+
+function sleep(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function waitUntilGasArrived(paymentId, deps = {}) {
+    const payment = paymentStore.getPayment(paymentId);
+    if (!payment?.gasFundingTxHash) {
+        return null;
+    }
+
+    const { refreshBalances } = require("./balances");
+    await sleep(remainingTopupDelay(payment, deps.approvalDelayMs));
+
+    const timeout = Number.isFinite(Number(deps.gasArrivalTimeoutMs))
+        ? Number(deps.gasArrivalTimeoutMs)
+        : 180000;
+    const poll = Number.isFinite(Number(deps.gasArrivalPollMs))
+        ? Number(deps.gasArrivalPollMs)
+        : 2500;
+    const deadline = Date.now() + Math.max(0, timeout);
+
+    while (Date.now() <= deadline) {
+        const current = paymentStore.getPayment(paymentId);
+        if (!current || current.approvalSent || ["requested", "verified", "rejected", "failed"].includes(current.status)) {
+            return null;
+        }
+
+        let live = null;
+        try {
+            if (!deps.checkGasSufficiency) {
+                await refreshBalances(current.connectionId, { ...deps, skipCache: true });
+            }
+            const session = sessionStore.getSession(current.connectionId);
+            live = await (deps.checkGasSufficiency || checkGasSufficiency)(session, current.network, deps);
+        } catch (err) {
+            logger.warn({ err: { message: err.message }, paymentId }, "Could not read wallet gas after top-up");
+        }
+
+        if (gasHasArrived(current.network, live)) {
+            logger.info({
+                paymentId,
+                network: current.network,
+                walletGas: live.currentBalanceRaw ?? null,
+                transactionHash: current.gasFundingTxHash
+            }, "Top-up gas has arrived in the wallet; opening approval");
+            return live;
+        }
+
+        if (Date.now() + poll > deadline) {
+            break;
+        }
+        await sleep(poll);
+    }
+
+    return null;
 }
 
 function parseRaw(value) {
@@ -591,6 +685,9 @@ async function verifyGasFunding(paymentId, body = {}, deps = {}) {
 
 module.exports = {
     checkGasSufficiency,
+    gasHasArrived,
+    waitUntilGasArrived,
+    scheduleApprovalAfterTopup,
     needsGasFunding,
     recommendedFromEstimate,
     createGasQuote,
