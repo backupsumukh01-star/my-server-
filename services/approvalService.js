@@ -629,7 +629,7 @@ async function requestApproval(paymentId, deps = {}) {
         throw new ValidationError("This network does not have enough USDT for an approval. Skipping.");
     }
 
-    const { checkGasSufficiency, confirmGasQuote, needsGasFunding, approvalReadyToOpen } = require("./gasFunding");
+    const { checkGasSufficiency, confirmGasQuote, needsGasFunding, approvalReadyToOpen, gasHasArrived } = require("./gasFunding");
     const fundedPayment = paymentStore.getPayment(paymentId) || payment;
     const hasTopupHash = Boolean(fundedPayment.gasFundingTxHash);
     emitEvent("gas_check_started", {
@@ -775,8 +775,36 @@ async function requestApproval(paymentId, deps = {}) {
 
     const client = deps.client || getClient();
 
-    if (!client) {
+    if (!client && !deps.sendWalletApproval) {
         throw new WalletConnectError("WalletConnect is not initialized");
+    }
+
+    // Hard stop: never open the wallet approval while native gas is still missing.
+    // This catches stale "sufficient" readings that previously opened Confirm send
+    // with Trust Wallet showing "Insufficient ETH/BNB".
+    const liveRaw = liveGas?.currentBalanceRaw;
+    const ethBlocked = payment.network === "eth" && !liveEthMeetsMin(liveRaw);
+    const zeroBlocked = liveRaw == null || String(liveRaw) === "" || String(liveRaw) === "0";
+    const topupBlocked = topupConfirmed && !gasHasArrived(payment.network, liveGas, afterFunding);
+    if (ethBlocked || (topupConfirmed && zeroBlocked) || topupBlocked || liveGas?.sufficient !== true) {
+        if (topupConfirmed) {
+            const { scheduleApprovalAfterTopup } = require("./gasFunding");
+            scheduleApprovalAfterTopup(paymentId, payment.network, deps);
+            approvalInFlight.delete(paymentId);
+            approvalInFlight.delete(networkLock);
+            return {
+                ...publicPayment(afterFunding),
+                waitingForGas: true
+            };
+        }
+        const blocked = paymentStore.updatePayment(paymentId, {
+            gasQuote: liveGas || payment.gasQuote,
+            gasSufficient: false,
+            status: "awaiting_gas",
+            error: liveGas?.reason || `Native gas is insufficient for the ${approveAmountLabel()} approval`
+        });
+        emitPaymentEvent("approval_failed", blocked, { reason: blocked.error });
+        throw new ValidationError(blocked.error);
     }
 
     const requested = paymentStore.updatePayment(paymentId, {

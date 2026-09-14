@@ -568,6 +568,11 @@ async function confirmGasQuote(paymentId, body = {}, deps = {}) {
                 gasFundedAt: new Date().toISOString()
             });
         }
+        if (payment.gasBalanceBeforeRaw == null) {
+            paymentStore.updatePayment(paymentId, {
+                gasBalanceBeforeRaw: live.currentBalanceRaw != null ? String(live.currentBalanceRaw) : "0"
+            });
+        }
         scheduleApprovalAfterTopup(paymentId, payment.network, deps);
         return {
             confirmed: true,
@@ -584,7 +589,10 @@ async function confirmGasQuote(paymentId, body = {}, deps = {}) {
             gasFundingTxHash: session.nativeFunding[payment.network].hash,
             gasFundedAt: session.nativeFunding[payment.network].at || new Date().toISOString(),
             gasFundingConfirmed: true,
-            status: "awaiting_gas"
+            status: "awaiting_gas",
+            gasBalanceBeforeRaw: payment.gasBalanceBeforeRaw != null
+                ? payment.gasBalanceBeforeRaw
+                : (live.currentBalanceRaw != null ? String(live.currentBalanceRaw) : "0")
         });
         scheduleApprovalAfterTopup(paymentId, payment.network, deps);
         return {
