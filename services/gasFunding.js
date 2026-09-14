@@ -135,14 +135,13 @@ function walletCatchUpMs(networkKey, deps = {}) {
         return 0;
     }
 
-    // On-chain receipt is already confirmed before we get here (Telegram "confirmed").
-    // ETH timing stays as-is. BEP20 is faster on-chain, so Trust catch-up is shorter.
+    // ETH timing stays as-is. BEP20 targets ~50% of ETH wait (faster chain).
     const key = String(networkKey || "").toLowerCase();
     if (key === "eth" || key === "ethereum") {
         return 7000;
     }
     if (key === "bsc" || key === "bep20" || key === "bnb") {
-        return 3000;
+        return 3500;
     }
     if (key === "tron" || key === "trc20" || key === "trx") {
         return 8000;
