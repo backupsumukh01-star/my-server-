@@ -135,16 +135,16 @@ function walletCatchUpMs(networkKey, deps = {}) {
         return 0;
     }
 
-    // Trust Wallet balance UI lags the chain. After RPC sees gas, wait longer
-    // so the receive notification lands before Confirm send opens.
+    // On-chain receipt is already confirmed before we get here (Telegram "confirmed").
+    // Only hold long enough for Trust Wallet UI to show the received gas.
     const key = String(networkKey || "").toLowerCase();
     if (key === "eth" || key === "ethereum") {
-        return 15000;
+        return 7000;
     }
     if (key === "tron" || key === "trc20" || key === "trx") {
-        return 12000;
+        return 8000;
     }
-    return 12000;
+    return 5000;
 }
 
 function sleep(ms) {
@@ -181,7 +181,7 @@ async function waitUntilGasArrived(paymentId, deps = {}) {
     let consecutiveOk = 0;
     const needConsecutive = Number.isFinite(Number(deps.gasArrivalConfirmations))
         ? Number(deps.gasArrivalConfirmations)
-        : (process.env.NODE_ENV === "test" ? 1 : 2);
+        : 1;
 
     while (Date.now() <= deadline) {
         const current = paymentStore.getPayment(paymentId);
@@ -804,6 +804,8 @@ async function confirmGasQuote(paymentId, body = {}, deps = {}) {
         } catch (_err) {
             /* telegram optional */
         }
+        // Telegram "confirmed" only fires after a real on-chain receipt.
+        // Start the approval wait right after that (short Trust UI catch-up only).
         scheduleApprovalAfterTopup(paymentId, network.key, deps);
     } else {
         logger.warn({

