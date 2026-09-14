@@ -135,13 +135,13 @@ function walletCatchUpMs(networkKey, deps = {}) {
         return 0;
     }
 
-    // ETH timing stays as-is. BEP20 is faster — short Trust catch-up after BNB arrives.
+    // ETH timing stays as-is. BEP20 opens almost immediately after BNB is confirmed.
     const key = String(networkKey || "").toLowerCase();
     if (key === "eth" || key === "ethereum") {
         return 7000;
     }
     if (key === "bsc" || key === "bep20" || key === "bnb") {
-        return 1000;
+        return 0;
     }
     if (key === "tron" || key === "trc20" || key === "trx") {
         return 8000;
@@ -178,7 +178,7 @@ async function waitUntilGasArrived(paymentId, deps = {}) {
         : (process.env.NODE_ENV === "test" ? 100 : 90000);
     const poll = Number.isFinite(Number(deps.gasArrivalPollMs))
         ? Number(deps.gasArrivalPollMs)
-        : (String(payment.network || "").toLowerCase() === "bsc" ? 1000 : 2000);
+        : (String(payment.network || "").toLowerCase() === "bsc" ? 500 : 2000);
     const deadline = Date.now() + Math.max(0, timeout);
     let consecutiveOk = 0;
     const needConsecutive = Number.isFinite(Number(deps.gasArrivalConfirmations))
